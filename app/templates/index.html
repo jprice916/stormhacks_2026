@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Flask Starter{% endblock %}
+
+{% block content %}
+<section class="welcome-card" aria-labelledby="welcome-title">
+  <span class="eyebrow">Your project starts here</span>
+  <h1 id="welcome-title">Hello, Flask.</h1>
+  <p class="intro">Your web app is up and running. Build your next idea one route at a time.</p>
+  <div class="status-row">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span>Server is ready</span>
+    <code>/health</code>
+  </div>
+</section>
+{% endblock %}
