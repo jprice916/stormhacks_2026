@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev:vite": "vite",
-    "dev:flask": "../.venv/bin/python ../run.py",
+    "dev:flask": "python ../run.py",
     "dev": "concurrently -k -n \"vite,flask\" -c \"cyan,magenta\" \"npm run dev:vite\" \"npm run dev:flask\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

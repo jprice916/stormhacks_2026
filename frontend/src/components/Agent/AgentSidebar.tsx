@@ -1,9 +1,10 @@
 import { useEffect, useRef, type RefObject } from 'react';
+import { frontendPaths } from '../../lib/paths';
 
 const agentNavigationItems = [
-  { label: 'Memories', href: undefined },
+  { label: 'Logger', href: frontendPaths.logger },
   { label: 'Milestones', href: undefined },
-  { label: 'Settings', href: '/voice-settings' },
+  { label: 'Settings', href: frontendPaths.voiceSettings },
 ] as const;
 
 interface AgentSidebarProps {

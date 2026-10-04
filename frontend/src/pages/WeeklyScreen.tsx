@@ -4,6 +4,7 @@ import { AgentSidebar } from '../components/Agent/AgentSidebar';
 import { Bubble } from '../components/Bubble/Bubble';
 import { Carousel } from '../components/Carousel/Carousel';
 import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
+import { frontendPaths } from '../lib/paths';
 
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
@@ -81,7 +82,9 @@ export function WeeklyScreen() {
 
     return {
       ...item,
-      src: `${import.meta.env.BASE_URL}assets/${hasSummaries ? 'data-state.svg' : 'empty-state.svg'}`,
+      src: hasSummaries
+        ? `${import.meta.env.BASE_URL}images/weekly/${entry.day.toLowerCase()}.gif`
+        : `${import.meta.env.BASE_URL}images/weekly/no_data.gif`,
       alt: hasSummaries ? `${entry.day} with journal summaries` : `${entry.day} with no journal summaries`,
       subtitle: `${entry.dateLabel} · ${status}`,
     };
@@ -229,7 +232,7 @@ export function WeeklyScreen() {
             <a
               aria-label="Open profile"
               className="flex h-12 w-12 items-center justify-center rounded-full border border-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700"
-              href="/profile"
+              href={frontendPaths.profile}
             >
               <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
                 <circle cx="16" cy="16" r="13" stroke="currentColor" strokeWidth="1.5" />
@@ -248,7 +251,7 @@ export function WeeklyScreen() {
               onItemClick={(_item, index) => {
                 const entry = datedEntries[index];
                 if (entry) {
-                  window.location.assign(`/recordings?date=${encodeURIComponent(entry.dateKey)}`);
+                  window.location.assign(`${frontendPaths.recordings}?date=${encodeURIComponent(entry.dateKey)}`);
                 }
               }}
             />

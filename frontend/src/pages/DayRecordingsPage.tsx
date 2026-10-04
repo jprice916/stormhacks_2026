@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { frontendPaths } from '../lib/paths';
 
 type Recording = {
   id: number;
@@ -84,7 +85,7 @@ export function DayRecordingsPage() {
   return (
     <main className="min-h-screen bg-[#fbfaf8] px-5 py-8 text-stone-800 sm:px-10 sm:py-12">
       <div className="mx-auto max-w-4xl">
-        <a className="text-sm underline decoration-stone-400 underline-offset-4 hover:text-[#887445]" href="/weekly">
+        <a className="text-sm underline decoration-stone-400 underline-offset-4 hover:text-[#887445]" href={frontendPaths.weekly}>
           Back to your week
         </a>
         <header className="mb-8 mt-6">

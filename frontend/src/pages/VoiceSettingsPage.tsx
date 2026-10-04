@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { BrandMark } from '../components/BrandMark';
+import { frontendPaths } from '../lib/paths';
 import {
   defaultSettings,
   loadSettings,
@@ -266,11 +267,11 @@ export function VoiceSettingsPage() {
     <main className="profile-page voice-settings-page">
       <div className="profile-shell voice-settings-shell">
         <header className="profile-topbar voice-settings-topbar">
-          <a aria-label="Week by week home" className="profile-brand" href="/">
+          <a aria-label="Week by week home" className="profile-brand" href={frontendPaths.home}>
             <BrandMark className="profile-brand-logo" />
             <span>Week by week</span>
           </a>
-          <a className="profile-navigation voice-back-link" href="weekly">
+          <a className="profile-navigation voice-back-link" href={frontendPaths.weekly}>
             <svg aria-hidden="true" fill="none" viewBox="0 0 20 20"><path d="M16 10H4m5-5-5 5 5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
             Back to my weeks
           </a>

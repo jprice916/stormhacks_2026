@@ -11,7 +11,7 @@ export const weekDayNames = [
 ] as const;
 
 export const weeklyCarouselTemplates: CircularCarouselItem[] = weekDayNames.map((day) => ({
-  src: `${import.meta.env.BASE_URL}assets/empty-state.svg`,
+  src: `${import.meta.env.BASE_URL}images/weekly/no_data.gif`,
   alt: `${day} journal highlights`,
   title: day,
 }));

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { BrandMark } from '../components/BrandMark';
+import { frontendPaths } from '../lib/paths';
 import {
   changePassword,
   loadProfile,
@@ -237,7 +238,7 @@ export function ProfilePage() {
 
   function closeDeleteDialog() {
     if (deleteState === 'success') {
-      window.location.assign('/login');
+      window.location.assign(frontendPaths.login);
       return;
     }
     setIsDeleteOpen(false);
@@ -330,7 +331,7 @@ export function ProfilePage() {
     setLogoutError('');
     try {
       await logoutUser();
-      window.location.assign('/login');
+      window.location.assign(frontendPaths.login);
     } catch (error) {
       setLogoutError(error instanceof Error
         ? error.message
@@ -346,12 +347,12 @@ export function ProfilePage() {
     <main className="profile-page">
       <div className="profile-shell">
         <header className="profile-topbar">
-          <a aria-label="Week by week home" className="profile-brand" href="/">
+          <a aria-label="Week by week home" className="profile-brand" href={frontendPaths.home}>
             <BrandMark className="profile-brand-logo" />
             <span>Week by week</span>
           </a>
           <nav aria-label="Main navigation" className="profile-navigation">
-            <a href="/weekly">My weeks</a>
+            <a href={frontendPaths.weekly}>My weeks</a>
             <span aria-current="page" className="profile-current-page">Profile</span>
             <button className="profile-button profile-button--quiet profile-button--small" disabled={isLoggingOut} onClick={handleLogout} type="button">
               {isLoggingOut ? 'Signing out…' : 'Log out'}
