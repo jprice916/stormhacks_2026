@@ -15,6 +15,12 @@ type LiveResponse = {
   retry_after_seconds?: number;
 };
 
+type LiveDebug = {
+  checkpoint: string;
+  responseJson: string;
+  question: string;
+};
+
 type RecordingResponse = {
   message?: string;
   recording_url?: string;
@@ -110,6 +116,7 @@ export function LoggerPage() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [reflection, setReflection] = useState<string | null>(null);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
+  const [liveDebug, setLiveDebug] = useState<LiveDebug | null>(null);
 
   const clearRecordingTimers = useCallback(() => {
     [timerRef, maxTimerRef, pauseTimerRef, checkpointIntervalRef].forEach((timer) => {
@@ -168,6 +175,11 @@ export function LoggerPage() {
     lastCheckpointLengthRef.current = words.length;
     const payload = { recording_id: recordingIdRef.current, trigger, checkpoint: checkpointWords.join(' ') };
     startCooldown(LIVE_COOLDOWN_SECONDS);
+    setLiveDebug({
+      checkpoint: payload.checkpoint,
+      responseJson: '{\n  "pending": true\n}',
+      question: 'Waiting for Gemini…',
+    });
 
     try {
       const response = await fetch('/api/live-reflection', {
@@ -176,6 +188,11 @@ export function LoggerPage() {
         body: JSON.stringify(payload),
       });
       const result = await readResponse<LiveResponse>(response);
+      setLiveDebug({
+        checkpoint: payload.checkpoint,
+        responseJson: JSON.stringify(result, null, 2),
+        question: result.question || 'No question returned',
+      });
       if (!response.ok) {
         setStatus(result.message || `Reflection service returned HTTP ${response.status}.`);
         return;
@@ -191,7 +208,13 @@ export function LoggerPage() {
         setReflection(result.question);
       }
     } catch (error) {
-      setStatus(error instanceof Error ? `Could not reach the reflection service: ${error.message}` : 'Could not reach the reflection service.');
+      const message = error instanceof Error ? `Could not reach the reflection service: ${error.message}` : 'Could not reach the reflection service.';
+      setLiveDebug({
+        checkpoint: payload.checkpoint,
+        responseJson: JSON.stringify({ error: message }, null, 2),
+        question: 'No question returned',
+      });
+      setStatus(message);
     }
   }, [startCooldown]);
 
@@ -291,6 +314,7 @@ export function LoggerPage() {
     setIsSaved(false);
     setReflection(null);
     setRevisit(undefined);
+    setLiveDebug(null);
     fullTranscriptRef.current = '';
     interimTranscriptRef.current = '';
     chunksRef.current = [];
@@ -336,6 +360,7 @@ export function LoggerPage() {
     setPlaybackUrl('');
     setIsComplete(false);
     setIsSaved(false);
+    setLiveDebug(null);
     setStatus('Camera ready. Select Record when you are ready to speak.');
   }, []);
 
@@ -434,6 +459,14 @@ export function LoggerPage() {
               {isComplete && <video className="h-full w-full bg-stone-900 object-contain" controls playsInline ref={recordedVideoRef} src={playbackUrl || undefined} />}
               {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
               {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
+              {liveDebug && (
+                <aside className="absolute left-4 top-4 z-10 w-56 border border-stone-500 bg-stone-950/90 p-2 font-mono text-[0.65rem] leading-4 text-stone-100 shadow-sm" aria-live="polite">
+                  <p className="font-sans text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-stone-300">Live reflection debug</p>
+                  <p className="mt-1 truncate text-stone-300" title={liveDebug.checkpoint}>Input: {liveDebug.checkpoint}</p>
+                  <p className="mt-1 text-amber-200">Question: {liveDebug.question}</p>
+                  <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap break-words text-stone-300">{liveDebug.responseJson}</pre>
+                </aside>
+              )}
               {reflection && (
                 <aside className="absolute bottom-11 right-4 z-10 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
                   <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
