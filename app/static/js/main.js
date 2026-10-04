@@ -23,6 +23,15 @@ class RecorderApp {
     this.recordedDurationSeconds = 0;
     this.timerInterval = undefined;
 
+    // Web Speech API
+    this.recognition = undefined;
+    this.fullTranscript = "";
+    this.interimTranscript = "";
+    this.isRecording = false;
+
+    // Stores latest backend response
+    this.latestResult = null;
+
     this.bindEvents();
   }
 
@@ -36,7 +45,7 @@ class RecorderApp {
 
   async startCamera() {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      this.statusText.textContent = "Recording is not supported in this browser. Try a current version of Chrome, Edge, or Firefox over HTTPS or localhost.";
+      this.statusText.textContent = "Recording is not supported in this browser.";
       return;
     }
 
@@ -51,35 +60,89 @@ class RecorderApp {
       this.placeholder.hidden = true;
       this.cameraButton.textContent = "Camera ready";
       this.startButton.disabled = false;
-      this.statusText.textContent = "Camera and microphone are ready. Select Start recording when you are ready.";
+      this.statusText.textContent = "Camera ready. Select Start recording when you are ready to speak.";
     } catch (error) {
       this.stopCamera();
-      this.statusText.textContent = error.name === "NotAllowedError"
-        ? "Camera or microphone access was denied. Allow access in your browser settings and try again."
-        : `Could not start the camera: ${error.message}`;
+      this.statusText.textContent = `Could not start camera: ${error.message}`;
     } finally {
       this.cameraButton.disabled = Boolean(this.mediaStream);
     }
   }
 
+  initSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("Web Speech API not supported. Transcription will rely on backend fallback.");
+      return;
+    }
+
+    this.recognition = new SpeechRecognition();
+    this.recognition.continuous = true;
+    this.recognition.interimResults = true;
+    this.recognition.lang = "en-US";
+
+    this.recognition.onresult = (event) => {
+      this.interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          this.fullTranscript += event.results[i][0].transcript + " ";
+        } else {
+          this.interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      const liveText = (this.fullTranscript + this.interimTranscript).trim();
+      if (liveText) {
+        this.statusText.textContent = `Live transcript: "${liveText}"`;
+      }
+    };
+
+    this.recognition.onerror = (event) => {
+      if (event.error !== "no-speech") {
+        console.warn("Speech recognition error:", event.error);
+      }
+    };
+
+    this.recognition.onend = () => {
+      if (this.isRecording && this.recognition) {
+        try {
+          this.recognition.start();
+        } catch (_) { }
+      }
+    };
+  }
+
   startRecording() {
     if (!this.mediaStream) return;
 
+    this.isRecording = true;
     this.startButton.disabled = true;
     this.cameraButton.disabled = true;
+    this.stopButton.disabled = false;
+    this.recordingActions.hidden = true;
+    this.recordedVideo.hidden = true;
+    if (this.recordingUrl) URL.revokeObjectURL(this.recordingUrl);
+
     try {
       this.recordingChunks = [];
       this.recordingBlob = undefined;
-      this.recordingActions.hidden = true;
-      this.recordedVideo.hidden = true;
-      if (this.recordingUrl) URL.revokeObjectURL(this.recordingUrl);
+      this.fullTranscript = "";
+      this.interimTranscript = "";
 
       this.mediaRecorder = this.createMediaRecorder(this.mediaStream);
       this.mediaRecorder.addEventListener("dataavailable", (event) => {
-        if (event.data.size > 0) this.recordingChunks.push(event.data);
+        if (event.data && event.data.size > 0) {
+          this.recordingChunks.push(event.data);
+        }
       });
       this.mediaRecorder.addEventListener("stop", () => this.finishRecording(), { once: true });
-      this.mediaRecorder.start(1000);
+      this.mediaRecorder.start(500);
+
+      this.initSpeechRecognition();
+      if (this.recognition) {
+        try {
+          this.recognition.start();
+        } catch (_) { }
+      }
 
       this.startedAt = Date.now();
       this.recordedDurationSeconds = 0;
@@ -87,9 +150,9 @@ class RecorderApp {
       this.timerLabel.textContent = "Recording";
       this.timerBar.classList.add("is-recording");
       this.timerInterval = window.setInterval(() => this.updateTimer(), 250);
-      this.stopButton.disabled = false;
-      this.statusText.textContent = "Recording video and audio. Select Stop when you are done.";
+      this.statusText.textContent = "Recording video and listening to your voice. Click Stop when finished.";
     } catch (error) {
+      this.isRecording = false;
       this.startButton.disabled = false;
       this.cameraButton.disabled = false;
       this.statusText.textContent = `Could not start recording: ${error.message}`;
@@ -97,9 +160,20 @@ class RecorderApp {
   }
 
   stopRecording() {
-    if (!this.mediaRecorder || this.mediaRecorder.state === "inactive") return;
+    if (!this.isRecording) return;
+    this.isRecording = false;
 
-    this.mediaRecorder.stop();
+    if (this.recognition) {
+      try {
+        this.recognition.stop();
+      } catch (_) { }
+      this.recognition = undefined;
+    }
+
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      this.mediaRecorder.stop();
+    }
+
     this.stopButton.disabled = true;
     window.clearInterval(this.timerInterval);
     this.updateTimer();
@@ -107,43 +181,84 @@ class RecorderApp {
   }
 
   finishRecording() {
-    this.recordingBlob = new Blob(this.recordingChunks, { type: this.mediaRecorder.mimeType || "video/webm" });
+    const mimeType = this.mediaRecorder?.mimeType || "video/webm";
+    this.recordingBlob = new Blob(this.recordingChunks, { type: mimeType });
     this.recordingUrl = URL.createObjectURL(this.recordingBlob);
+
     this.recordedVideo.src = this.recordingUrl;
     this.recordedVideo.hidden = false;
     this.downloadLink.href = this.recordingUrl;
     this.recordingActions.hidden = false;
-    this.stopCamera();
-    this.statusText.textContent = `Recording ready (${(this.recordingBlob.size / (1024 * 1024)).toFixed(1)} MB). Preview or download it, or try the TiDB upload placeholder.`;
+
+    this.saveButton.disabled = true;
+    this.saveButton.textContent = "Saving entry…";
+
     this.timerBar.classList.remove("is-recording");
     this.timerLabel.textContent = "Recording complete";
+    this.startButton.disabled = false;
     this.cameraButton.disabled = false;
+
+    this.statusText.textContent = `Recording complete (${(this.recordingBlob.size / (1024 * 1024)).toFixed(1)} MB). Analyzing with Gemini…`;
+
+    this.uploadRecording();
   }
 
   async uploadRecording() {
     if (!this.recordingBlob) return;
 
     this.saveButton.disabled = true;
-    this.statusText.textContent = "Sending recording to the Flask TiDB placeholder…";
+
+    const rawTranscript = (this.fullTranscript + this.interimTranscript);
+
+    "slash for delimiters, s for whitespace and tabs/new lines, g for global so it makes the changes for all instances."
+    const sanitizedTranscript = rawTranscript.replace(/\s+/g, " ").trim();
+
+
     const formData = new FormData();
-    formData.append("recording", this.recordingBlob, "webcam-recording.webm");
+    formData.append("recording", this.recordingBlob, `entry_${Date.now()}.webm`);
+    formData.append("user_id", "demo_user");
     formData.append("duration_seconds", String(this.recordedDurationSeconds));
+    if (sanitizedTranscript) {
+      formData.append("transcript", sanitizedTranscript);
+    }
 
     try {
       const response = await fetch("/api/recordings", { method: "POST", body: formData });
       const result = await response.json();
-      this.statusText.textContent = result.message || (response.ok ? "Upload complete." : "Upload failed.");
+
+      if (response.ok) {
+        this.latestResult = result;
+        console.log("Entry JSON ready to use:", this.latestResult);
+
+        // Render exclusively the spoken text
+        this.statusText.textContent = sanitizedTranscript
+          ? `"${sanitizedTranscript}"`
+          : (result.transcript || "Recording saved.");
+
+        this.saveButton.textContent = "Saved to Database";
+        this.saveButton.disabled = true;
+
+        if (result.analysis) {
+          this.handleAnalysis(result.analysis);
+        }
+      } else {
+        this.statusText.textContent = result.message || "Failed to process entry.";
+        this.saveButton.disabled = false;
+        this.saveButton.textContent = "Retry Save";
+      }
     } catch (error) {
-      this.statusText.textContent = `Could not reach the Flask server: ${error.message}`;
-    } finally {
+      this.statusText.textContent = `Server communication error: ${error.message}`;
       this.saveButton.disabled = false;
+      this.saveButton.textContent = "Retry Save";
     }
   }
 
-  createMediaRecorder(stream) {
-    const candidates = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
-    const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type));
-    return mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  handleAnalysis(analysis) {
+    const textToSpeak = analysis.reflection_quote || analysis.summary;
+    console.log("Prepared for ElevenLabs TTS:", textToSpeak);
+    console.log("Emotion:", analysis.emotion);
+    console.log("Key Takeaways:", analysis.key_takeaways);
+    console.log("Follow-up Questions:", analysis.follow_up_questions);
   }
 
   updateTimer() {
@@ -152,6 +267,7 @@ class RecorderApp {
   }
 
   stopCamera() {
+    if (this.isRecording) this.stopRecording();
     this.mediaStream?.getTracks().forEach((track) => track.stop());
     this.mediaStream = undefined;
     this.preview.srcObject = null;
@@ -164,10 +280,14 @@ class RecorderApp {
     this.stopCamera();
     if (this.recordingUrl) URL.revokeObjectURL(this.recordingUrl);
   }
+
+  createMediaRecorder(stream) {
+    const candidates = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+    const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type));
+    return mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+  }
 }
 
-// Saved browser permissions permit the preview to open immediately. First-time
-// visitors receive the browser's standard camera and microphone permission prompt.
 window.addEventListener("DOMContentLoaded", () => {
   const recorderApp = new RecorderApp();
   recorderApp.startCamera();
