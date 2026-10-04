@@ -61,13 +61,12 @@ export function LandingPage() {
               >
                 Profile
               </a>
-              <button
-                className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors disabled:cursor-not-allowed sm:px-5"
-                disabled
-                type="button"
+              <a
+                className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5"
+                href="/login"
               >
                 Sign in
-              </button>
+              </a>
             </nav>
           </header>
 
@@ -83,16 +82,15 @@ export function LandingPage() {
                 Gather the bright spots, the small wins, and the steps forward. At the end of the week, see them all in one warm place.
               </p>
               <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button
-                  className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] disabled:cursor-not-allowed"
-                  disabled
-                  type="button"
+                <a
+                  className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
+                  href="/login"
                 >
                   Sign in to get started
                   <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
                     <path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
                   </svg>
-                </button>
+                </a>
                 <a
                   className="inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-sm font-medium text-[#887445] transition-colors hover:text-[#473c21] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
                   href="weekly"

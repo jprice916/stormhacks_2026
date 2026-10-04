@@ -9,6 +9,15 @@ export default defineConfig({
     host: process.env.VITE_HOST || '127.0.0.1',
     port: 5173,
     proxy: {
+      '/login': {
+        target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        bypass: (request) => request.method === 'GET' ? '/index.html' : undefined,
+      },
+      '/signup': {
+        target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
+        changeOrigin: true,
+      },
       '/api': {
         target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
         changeOrigin: true,
