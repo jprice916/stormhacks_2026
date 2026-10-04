@@ -16,7 +16,12 @@ export const weeklyCarouselTemplates: CircularCarouselItem[] = weekDayNames.map(
   title: day,
 }));
 
-export async function loadWeeklySummaries(weekStart: string): Promise<Record<string, string[]>> {
+export type JournalSummary = {
+  concise_summary: string;
+  full_summary: string;
+};
+
+export async function loadWeeklySummaries(weekStart: string): Promise<Record<string, JournalSummary[]>> {
   const response = await fetch(`/api/journal/summaries?week_start=${encodeURIComponent(weekStart)}`, {
     credentials: 'same-origin',
   });
@@ -27,5 +32,5 @@ export async function loadWeeklySummaries(weekStart: string): Promise<Record<str
   if (!response.ok) {
     throw new Error(result.message || 'Journal summaries could not be loaded.');
   }
-  return result.summaries as Record<string, string[]>;
+  return result.entries_by_date as Record<string, JournalSummary[]>;
 }

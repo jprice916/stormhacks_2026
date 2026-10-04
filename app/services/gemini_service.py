@@ -22,7 +22,8 @@ class GeminiService:
         # Set USE_MOCK_GEMINI=true only for offline development; real Gemini is the default.
         self.use_mock = os.getenv("USE_MOCK_GEMINI", "false").lower() == "true"
         self.api_key = os.getenv("JAYS_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.analysis_model = os.getenv("GEMINI_ANALYSIS_MODEL", "gemini-3.8-flash")
+        self.analysis_model = os.getenv("GEMINI_ANALYSIS_MODEL", "gemini-3.5-flash-lite")
+        self.analysis_fallback_model = os.getenv("GEMINI_ANALYSIS_FALLBACK_MODEL", "gemini-3.5-flash")
         self.live_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.5-flash-lite")
         self.client = None
         if self.use_mock:
@@ -42,23 +43,35 @@ class GeminiService:
         from google.genai import types
 
         prompt = self._prompt(transcript, current_date or date.today().isoformat(), user_time_zone)
-        try:
-            response = self.client.models.generate_content(
-                model=self.analysis_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
-            )
-            cleaned = (response.text or "").strip()
-            fence = chr(96) * 3
-            if cleaned.startswith(fence):
-                cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith(fence):
-                cleaned = cleaned[:-3].strip()
-            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            return self._normalize(json.loads(match.group(0) if match else cleaned), transcript)
-        except Exception as error:
-            print(f"[GeminiService] Analysis error: {error}.")
-            raise GeminiRequestError("Gemini could not analyze this recording.") from error
+        models = list(dict.fromkeys((self.analysis_model, self.analysis_fallback_model)))
+        last_error: Exception | None = None
+        for model in models:
+            try:
+                response = self.client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type="application/json"),
+                )
+                cleaned = (response.text or "").strip()
+                fence = chr(96) * 3
+                if cleaned.startswith(fence):
+                    cleaned = cleaned.split("\n", 1)[-1]
+                if cleaned.endswith(fence):
+                    cleaned = cleaned[:-3].strip()
+                match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                return self._normalize(json.loads(match.group(0) if match else cleaned), transcript)
+            except Exception as error:
+                last_error = error
+                print(f"[GeminiService] Analysis error from {model}: {error}.")
+
+        error_text = str(last_error or "unknown error")
+        if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
+            message = "Gemini's analysis quota is currently exhausted. Try analysis again later."
+        elif "503" in error_text or "UNAVAILABLE" in error_text:
+            message = "Gemini is temporarily busy. Try analysis again shortly."
+        else:
+            message = "Gemini could not analyze this recording."
+        raise GeminiRequestError(message) from last_error
 
     @staticmethod
     def _prompt(transcript: str, current_date: str, user_time_zone: str) -> str:
@@ -74,7 +87,15 @@ The transcript comes from speech-to-text and may contain minor typos, missing
 punctuation, or misheard words. Infer intended meaning only when context makes it
 clear. Do not invent, correct, or rely on uncertain details.
 
-Extract a concise summary, topic, emotion, and takeaways. Identify education starts,
+<<<<<<< HEAD
+Extract a concise summary and a fuller 2-4 sentence summary, topic, emotion, and takeaways. Identify education starts,
+=======
+Create two summaries: a detailed factual summary in 3-5 sentences and a concise
+retrospective recap of at most 3 sentences. The concise recap must begin with
+"On this day, you..." and describe what happened without adding encouragement,
+advice, or facts the user did not state. Also extract a topic, emotion, and takeaways.
+Identify education starts,
+>>>>>>> 9991786ca1c0404a5f123f18265af92a64ba5c42
 skill learning, career goals, new jobs, achievements, personal growth, and recurring
 struggles. When a user begins a learning path, create 2-4 supportive baseline
 questions at their stated level for future comparison.
@@ -94,7 +115,13 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
-  "summary": "one or two sentences",
+<<<<<<< HEAD
+  "concise_summary": "one short sentence, no more than 20 words",
+  "summary": "full summary in 2-4 sentences, preserving the important context",
+=======
+  "summary": "detailed factual summary in 3-5 sentences beginning with On this day, you...",
+  "concise_summary": "at most 3 sentences beginning with On this day, you...",
+>>>>>>> 9991786ca1c0404a5f123f18265af92a64ba5c42
   "key_takeaways": ["point"],
   "growth_signal": {{
     "type": "education_start|career_goal|new_job|skill_building|aspiration|personal_growth|null",
@@ -104,7 +131,6 @@ Return this JSON object:
   }},
   "important_events": [{{"title": "event", "scheduled_for": "YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS or null", "original_time_reference": "exact wording", "reminder_reason": "reminder"}}],
   "future_revisit_cues": [{{"trigger_concepts": ["specific concept"], "trigger": "future milestone", "reason": "why this matters"}}],
-  "reflection_quote": "one supportive sentence",
   "temporal_references": "relative wording or null"
 }}
 
@@ -144,6 +170,19 @@ for ordinary updates, completed thoughts that need no elaboration, routine detai
 repetition, filler, and clear factual statements. Do not ask merely because the
 speaker named a concrete item, event, person, place, or cost. Do not assume emotions.
 
+A baseline check is another good reason to prompt. Use it only when the speaker
+explicitly says they are starting a named course, program, career path, job, or
+skill, and a concrete foundational question would create a useful before-and-after
+memory. Across one recording, up to three distinct baseline checks are useful; ask
+only one at a time and wait for the person to keep speaking before another. Do not
+pretend to grade them and do not assume they lack knowledge. Invite their current
+explanation in their own words. For example, if someone says they are about to
+start CST and has not studied computer science before, a suitable baseline check is:
+"Before CST begins, how would you explain what an object is in your own words?" Do
+not reuse that example for unrelated subjects. If the program or skill does not make
+a foundational concept clear, ask about their current familiarity instead of
+inventing curriculum. A baseline check should be marked question_type "baseline".
+
 When you do ask a question, make it specific to a concrete detail from this
 checkpoint. Name the event, item, person, place, choice, cost, or goal the speaker
 actually mentioned. Ask one short, natural question. Never use generic wording such
@@ -151,7 +190,7 @@ as "What feels most important" or "What would future you remember" when a concre
 detail is available.
 
 Return ONLY JSON:
-{{"should_prompt": true, "question": "one short optional question or null", "topic": "short label or null"}}
+{{"should_prompt": true, "question": "one short optional question or null", "topic": "short label or null", "question_type": "reflection|baseline|null"}}
 
 <checkpoint>
 {checkpoint}
@@ -166,10 +205,12 @@ Return ONLY JSON:
             parsed = json.loads(response.text or "{}")
             question = parsed.get("question")
             should_prompt = bool(parsed.get("should_prompt") and isinstance(question, str) and question.strip())
+            question_type = parsed.get("question_type")
             return {
                 "should_prompt": should_prompt,
                 "question": question.strip()[:500] if should_prompt else None,
                 "topic": str(parsed.get("topic") or "")[:120] or None,
+                "question_type": question_type if question_type in {"reflection", "baseline"} and should_prompt else None,
             }
         except Exception as error:
             error_text = str(error)
@@ -272,8 +313,13 @@ Return ONLY JSON:
             return [round(random.uniform(-0.1, 0.1), 6) for _ in range(768)]
         if not self.client:
             raise GeminiRequestError("Gemini API key is not configured.")
+        from google.genai import types
         try:
-            response = self.client.models.embed_content(model="text-embedding-004", contents=text)
+            response = self.client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=text,
+                config=types.EmbedContentConfig(output_dimensionality=768),
+            )
             return response.embeddings[0].values
         except Exception as error:
             print(f"[GeminiService] Embedding error: {error}.")
@@ -296,7 +342,9 @@ Return ONLY JSON:
             "entry_type": entry_type,
             "core_topic": str(analysis.get("core_topic") or "journal entry")[:200],
             "emotion": str(analysis.get("emotion") or "neutral")[:80],
+            "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:280],
             "summary": str(analysis.get("summary") or transcript)[:4000],
+            "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:1500],
             "key_takeaways": [str(item)[:500] for item in analysis.get("key_takeaways", []) if isinstance(item, str)][:8],
             "growth_signal": {
                 "type": growth.get("type") if growth.get("type") in {"education_start", "career_goal", "new_job", "skill_building", "aspiration", "personal_growth"} else None,
@@ -306,7 +354,6 @@ Return ONLY JSON:
             },
             "important_events": records(analysis.get("important_events"), "title", 10),
             "future_revisit_cues": records(analysis.get("future_revisit_cues"), "trigger", 8),
-            "reflection_quote": str(analysis.get("reflection_quote") or "")[:500],
             "temporal_references": analysis.get("temporal_references") or None,
         }
 
@@ -315,12 +362,13 @@ Return ONLY JSON:
             "entry_type": "general",
             "core_topic": "voice journal log",
             "emotion": "neutral",
+            "concise_summary": (transcript or "Hands-free entry log")[:280],
             "summary": transcript or "Hands-free entry log",
             "key_takeaways": ["User completed a vocal entry check-in."],
             "growth_signal": {"type": None, "topic": None, "future_revisit_reason": None, "baseline_questions": []},
             "important_events": [],
             "future_revisit_cues": [],
-            "reflection_quote": "Consistent reflection turns small moments into milestones.",
+            "concise_summary": "On this day, you recorded a voice journal entry.",
             "temporal_references": None,
         }
 
@@ -332,4 +380,5 @@ Return ONLY JSON:
             "should_prompt": True,
             "question": "What specific part of this experience would you want to unpack a little more?",
             "topic": "reflection",
+            "question_type": "reflection",
         }

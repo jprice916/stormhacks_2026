@@ -2,10 +2,12 @@
 
 import base64
 import io
+import json
 import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time as datetime_time, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -31,8 +33,15 @@ from app.database import get_connection
 from app.models.journal_entry import JournalEntry
 from app.media_logs import (
     create_database_recording,
+    claim_recording_analysis_job,
+    enqueue_recording_analysis,
+    finish_recording_analysis_job,
     get_database_recording,
+    get_due_recording_analysis_job_ids,
+    get_recording_analysis_input,
+    retry_or_fail_recording_analysis_job,
     get_video_logs_for_user,
+    update_recording_analysis_state,
     user_owns_media,
 )
 from app.services.db_service import DatabaseService
@@ -53,10 +62,13 @@ gemini_service = GeminiService()
 db_service = DatabaseService()
 revisit_service = RevisitService(db_service, gemini_service)
 LIVE_REFLECTION_COOLDOWN_SECONDS = 15
-LIVE_REFLECTION_MAX_PER_RECORDING = 4
+LIVE_REFLECTION_MAX_PER_RECORDING = 3
 LIVE_REFLECTION_MIN_WORDS = 10
 live_reflection_limits: dict[str, dict[str, float | int]] = {}
 live_reflection_lock = threading.Lock()
+analysis_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="recording-analysis")
+analysis_jobs_in_progress: set[int] = set()
+analysis_jobs_lock = threading.Lock()
 login_service = LoginService()
 profile_service = ProfileService()
 elevenlabs_service = ElevenLabsService()
@@ -66,21 +78,63 @@ UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
+def _serve_react_page(page: str = ""):
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
+    page_url = f"/static/frontend/{page}" if page else "/static/frontend/"
+    query_string = request.query_string.decode()
+    query_suffix = f"?{query_string}" if query_string else ""
+    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
+    return redirect(f"{dev_server.rstrip('/')}{page_url}{query_suffix}")
+
+
 @main.get("/", endpoint="index")
 @main.get("/weekly", endpoint="weekly")
 @main.get("/profile", endpoint="profile")
 @main.get("/voice-settings", endpoint="voice_settings")
 def index():
-    frontend_dir = Path(current_app.static_folder) / "frontend"
-    if (frontend_dir / "index.html").is_file():
-        return send_from_directory(frontend_dir, "index.html")
-    return redirect(url_for("main.logger"))
+    return _serve_react_page()
 
 
-@main.get("/logger")
-@login_required
+@main.get("/logger", endpoint="logger")
 def logger():
-    return send_from_directory(current_app.static_folder, "frontend/index.html")
+    return _serve_react_page("logger")
+
+
+@main.get("/static/frontend/")
+def frontend_home():
+    return _serve_react_page()
+
+
+@main.get("/static/frontend/login")
+def frontend_login():
+    return _serve_react_page("login")
+
+
+@main.get("/static/frontend/profile")
+def frontend_profile():
+    return _serve_react_page("profile")
+
+
+@main.get("/static/frontend/weekly")
+def frontend_weekly():
+    return _serve_react_page("weekly")
+
+
+@main.get("/static/frontend/logger")
+def frontend_logger():
+    return _serve_react_page("logger")
+
+
+@main.get("/static/frontend/my-videos")
+def frontend_my_videos():
+    return _serve_react_page("my-videos")
+
+
+@main.get("/static/frontend/recordings")
+def frontend_recordings():
+    return _serve_react_page("recordings")
 
 
 @main.get("/my-videos")
@@ -117,7 +171,7 @@ def login():
                 and "\\" not in next_url
             ):
                 return redirect(next_url)
-            return redirect(url_for("main.profile"))
+            return redirect("/static/frontend/profile")
         flash("Username/email or password is incorrect.", "error")
 
     return render_template("login.html")
@@ -126,13 +180,7 @@ def login():
 @main.get("/recordings")
 def day_recordings():
     """Serve the React recordings page for a selected calendar date."""
-    frontend_dir = Path(current_app.static_folder) / "frontend"
-    if (frontend_dir / "index.html").is_file():
-        return send_from_directory(frontend_dir, "index.html")
-    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
-    query_string = request.query_string.decode()
-    query_suffix = f"?{query_string}" if query_string else ""
-    return redirect(f"{dev_server.rstrip('/')}/recordings{query_suffix}")
+    return _serve_react_page("recordings")
 
 
 @main.post("/api/login")
@@ -145,7 +193,12 @@ def api_login():
         )
     except (MySQLError, KeyError, ValueError):
         current_app.logger.exception("Sign-in could not reach the account database")
-        return jsonify(message="The sign-in service is unavailable. Please check the database connection and try again."), 503
+        return (
+            jsonify(
+                message="The sign-in service is unavailable. Please check the database connection and try again."
+            ),
+            503,
+        )
     if user is None:
         return jsonify(message="Username/email or password is incorrect."), 401
 
@@ -156,7 +209,7 @@ def api_login():
         and not next_url.startswith("//")
         and "\\" not in next_url
     ):
-        next_url = url_for("main.profile")
+        next_url = "/static/frontend/profile"
     return jsonify(ok=True, redirect=next_url)
 
 
@@ -306,7 +359,7 @@ def api_journal_summaries():
         connection = get_connection()
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT DATE(created_at) AS entry_date, summary
+                """SELECT DATE(created_at) AS entry_date, summary, analysis_json
                    FROM journal_entries
                    WHERE user_id = %s AND created_at >= %s AND created_at < %s
                    ORDER BY created_at, id""",
@@ -320,21 +373,43 @@ def api_journal_summaries():
         if connection is not None:
             connection.close()
 
-    summaries_by_date: dict[str, list[str]] = {}
+    summaries_by_date: dict[str, list[dict[str, str]]] = {}
     for row in rows:
-        summary = row.get("summary")
-        if not isinstance(summary, str) or not summary.strip():
-            continue
-        date_key = row["entry_date"].isoformat()
-        summaries_by_date.setdefault(date_key, []).append(summary.strip())
+        analysis = row.get("analysis_json")
+        if isinstance(analysis, str):
+            try:
+                analysis = json.loads(analysis)
+            except json.JSONDecodeError:
+                analysis = {}
+        if not isinstance(analysis, dict):
+            analysis = {}
 
-    return jsonify(week_start=week_start.isoformat(), summaries=summaries_by_date)
+        full_summary = row.get("summary")
+        if not isinstance(full_summary, str) or not full_summary.strip():
+            full_summary = analysis.get("summary")
+        if not isinstance(full_summary, str) or not full_summary.strip():
+            continue
+        concise_summary = analysis.get("concise_summary")
+        if not isinstance(concise_summary, str) or not concise_summary.strip():
+            concise_summary = full_summary
+        date_key = row["entry_date"].isoformat()
+        summaries_by_date.setdefault(date_key, []).append({
+            "concise_summary": concise_summary.strip(),
+            "full_summary": full_summary.strip(),
+        })
+
+    return jsonify(
+        week_start=week_start.isoformat(),
+        entries_by_date=summaries_by_date,
+        summaries=summaries_by_date,
+    )
 
 
 @main.route("/signup", methods=["GET", "POST"])
+@main.route("/static/frontend/signup", methods=["GET", "POST"])
 def signup():
     if current_user.is_authenticated:
-        return redirect(url_for("main.index"))
+        return redirect("/static/frontend/profile")
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -356,7 +431,7 @@ def signup():
                 flash("That username or email is already registered.", "error")
             else:
                 login_user(user)
-                return redirect(url_for("main.profile"))
+                return redirect("/static/frontend/profile")
 
     return render_template("signup.html")
 
@@ -369,11 +444,11 @@ def verify_email(token):
     )
     if user is None:
         flash("This verification link is invalid, expired, or already used.", "error")
-        return redirect(url_for("main.login"))
+        return redirect("/static/frontend/login")
 
     login_user(user)
     flash("Your email is verified and your account is ready.", "info")
-    return redirect(url_for("main.index"))
+    return redirect("/static/frontend/profile")
 
 
 @main.post("/logout")
@@ -381,7 +456,7 @@ def verify_email(token):
 def logout():
     logout_user()
     flash("You have been signed out.", "info")
-    return redirect(url_for("main.login"))
+    return redirect("/static/frontend/login")
 
 
 @main.get("/database")
@@ -601,14 +676,23 @@ def _list_recordings():
             recording_date = datetime.strptime(date_value, "%Y-%m-%d").date()
         except ValueError:
             return jsonify(message="Use a date in YYYY-MM-DD format."), 400
+
+    _schedule_due_recording_analysis_jobs()
     try:
         videos = get_video_logs_for_user(int(current_user.get_id()), recording_date)
     except MySQLError:
         current_app.logger.exception("Could not list recordings from TiDB")
         return jsonify(message="Could not load recordings from TiDB."), 503
 
-    return jsonify(videos=[
-        {
+    response_videos = []
+    for video in videos:
+        analysis = video.get("analysis_json")
+        if isinstance(analysis, str):
+            try:
+                analysis = json.loads(analysis)
+            except json.JSONDecodeError:
+                analysis = None
+        response_videos.append({
             "id": video["id"],
             "user_id": video["user_id"],
             "log_date": video["log_date"].isoformat(),
@@ -620,13 +704,136 @@ def _list_recordings():
             "filename": video["title"] or "Recorded video",
             "recorded_at": video["log_date"].isoformat(),
             "recording_url": video["storage_path"],
-            "mime_type": video["mime_type"],
-            "original_filename": video["original_filename"],
-            "file_size_bytes": video["file_size_bytes"],
-            "chunk_count": video["chunk_count"],
-        }
-        for video in videos
-    ])
+            "analysis": analysis if isinstance(analysis, dict) else None,
+            "analysis_status": video.get("analysis_status"),
+            "analysis_error": video.get("analysis_error"),
+            "transcript_available": bool(video.get("transcript")),
+        })
+    return jsonify(videos=response_videos)
+
+
+def _save_final_recording_analysis(
+    *, log_id: int, user_id: str, filename: str, transcript: str,
+    current_date: str | None, user_time_zone: str,
+) -> tuple[dict | None, int | None, str | None]:
+    """Analyze one already-confirmed recording and link its entry in TiDB."""
+    try:
+        update_recording_analysis_state(log_id, transcript=transcript, status="processing")
+        analysis = gemini_service.analyze_transcript(
+            transcript, current_date=current_date, user_time_zone=user_time_zone,
+        )
+        try:
+            embedding = gemini_service.generate_embedding(transcript)
+        except GeminiRequestError:
+            current_app.logger.exception("Could not create recording embedding")
+            embedding = None
+        entry_id = db_service.save_entry(
+            JournalEntry(
+                user_id=user_id,
+                transcript=transcript,
+                entry_type=analysis.get("entry_type", "general"),
+                summary=analysis.get("summary", ""),
+                core_topic=analysis.get("core_topic", ""),
+                embedding=embedding,
+                video_filename=filename,
+                recording_log_id=log_id,
+            ),
+            analysis,
+        )
+        update_recording_analysis_state(log_id, status="saved")
+        return analysis, entry_id, None
+    except (GeminiRequestError, MySQLError) as error:
+        current_app.logger.exception("Could not save final recording analysis")
+        analysis_error = str(error)
+        try:
+            update_recording_analysis_state(
+                log_id, transcript=transcript, status="failed", error=analysis_error,
+            )
+        except MySQLError:
+            current_app.logger.exception("Could not record final-analysis failure")
+        return None, None, analysis_error
+
+
+def _schedule_recording_analysis_job(app, log_id: int, *, delay_seconds: int = 0) -> None:
+    """Run one durable queued job outside the request that stored the video."""
+    def submit() -> None:
+        with analysis_jobs_lock:
+            if log_id in analysis_jobs_in_progress:
+                return
+            analysis_jobs_in_progress.add(log_id)
+        analysis_executor.submit(_process_recording_analysis_job, app, log_id)
+
+    if delay_seconds:
+        timer = threading.Timer(delay_seconds, submit)
+        timer.daemon = True
+        timer.start()
+    else:
+        submit()
+
+
+def _schedule_due_recording_analysis_jobs() -> None:
+    """Resume TiDB-queued work after a server restart when the app is next used."""
+    try:
+        app = current_app._get_current_object()
+        for log_id in get_due_recording_analysis_job_ids():
+            _schedule_recording_analysis_job(app, log_id)
+    except MySQLError:
+        current_app.logger.exception("Could not schedule due recording-analysis jobs")
+
+
+def _process_recording_analysis_job(app, log_id: int) -> None:
+    """Claim, analyze, and persist one queue item; failures retry with backoff."""
+    retry_delay = None
+    job = None
+    try:
+        with app.app_context():
+            job = claim_recording_analysis_job(log_id)
+            if job is None:
+                return
+            recording = get_recording_analysis_input(int(job["user_id"]), log_id)
+            transcript = str(recording.get("transcript") or "").strip() if recording else ""
+            if not recording or not transcript:
+                update_recording_analysis_state(
+                    log_id, status="skipped", error="No browser transcript was captured, so final analysis was skipped.",
+                )
+                finish_recording_analysis_job(log_id)
+                return
+            analysis, _, analysis_error = _save_final_recording_analysis(
+                log_id=log_id,
+                user_id=str(job["user_id"]),
+                filename=str(recording.get("title") or "webcam-recording.webm"),
+                transcript=transcript,
+                current_date=job.get("journal_date").isoformat() if job.get("journal_date") else None,
+                user_time_zone=str(job.get("user_time_zone") or "America/Vancouver"),
+            )
+            if analysis:
+                finish_recording_analysis_job(log_id)
+            else:
+                error = analysis_error or "Final analysis did not complete."
+                retry_delay = retry_or_fail_recording_analysis_job(log_id, int(job["attempt_count"]), error)
+                update_recording_analysis_state(
+                    log_id,
+                    status="retrying" if retry_delay is not None else "failed",
+                    error=error,
+                )
+    except Exception:
+        app.logger.exception("Recording-analysis worker crashed for recording %s", log_id)
+        if job is not None:
+            try:
+                error = "The analysis worker stopped unexpectedly."
+                retry_delay = retry_or_fail_recording_analysis_job(log_id, int(job["attempt_count"]), error)
+                update_recording_analysis_state(
+                    log_id,
+                    status="retrying" if retry_delay is not None else "failed",
+                    error=error,
+                )
+            except Exception:
+                app.logger.exception("Could not schedule recovery for recording %s", log_id)
+    finally:
+        with analysis_jobs_lock:
+            analysis_jobs_in_progress.discard(log_id)
+    if retry_delay is not None:
+        _schedule_recording_analysis_job(app, log_id, delay_seconds=retry_delay)
 
 
 @main.route("/api/recordings", methods=["GET", "POST"])
@@ -675,12 +882,42 @@ def save_recording():
             )
         ), 503
 
+    transcript = request.form.get("transcript", "").strip()
+    analysis_status = "queued"
+    analysis_error = None
+    if transcript:
+        try:
+            update_recording_analysis_state(log_id, transcript=transcript, status="queued")
+            enqueue_recording_analysis(
+                log_id, user_id,
+                current_date=request.form.get("current_local_date"),
+                user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+            )
+            _schedule_recording_analysis_job(current_app._get_current_object(), log_id)
+        except MySQLError:
+            current_app.logger.exception("Could not queue final recording analysis")
+            analysis_status = "failed"
+            analysis_error = "Could not queue final analysis."
+            update_recording_analysis_state(log_id, transcript=transcript, status=analysis_status, error=analysis_error)
+    else:
+        analysis_error = "No browser transcript was captured, so final analysis was skipped."
+        analysis_status = "skipped"
+        try:
+            update_recording_analysis_state(log_id, status="skipped", error=analysis_error)
+        except MySQLError:
+            current_app.logger.exception("Could not record missing transcript state")
+
     return jsonify(
         stored=True,
         log_id=log_id,
         filename=original_name,
         recording_url=url_for("main.serve_recording", log_id=log_id),
         logged_at=logged_at.isoformat(),
+        analysis=None,
+        transcript=transcript or None,
+        entry_id=None,
+        analysis_status=analysis_status,
+        analysis_error=analysis_error,
     ), 201
 
 

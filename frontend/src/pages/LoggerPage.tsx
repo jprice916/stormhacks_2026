@@ -22,6 +22,8 @@ type RecordingResponse = {
   recording_url?: string;
   transcript?: string;
   analysis?: Record<string, unknown>;
+  analysis_status?: 'queued' | 'skipped';
+  analysis_error?: string;
   revisit_suggestion?: {
     cue_id?: number;
     suggestion?: string;
@@ -251,7 +253,7 @@ export function LoggerPage() {
   const startSpeechRecognition = useCallback(() => {
     const Constructor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Constructor) {
-      setStatus('Live browser transcription is unavailable; the recording will be transcribed after it ends.');
+      setStatus('Live browser transcription is unavailable, so this recording cannot receive a final analysis.');
       return;
     }
     const recognition = new Constructor();
@@ -389,7 +391,15 @@ export function LoggerPage() {
       if (!response.ok) throw new Error(result.message || 'Failed to save the recording.');
       if (result.recording_url) setPlaybackUrl(result.recording_url);
       setRevisit(result.revisit_suggestion);
-      setStatus(transcript ? `“${transcript}”` : (result.transcript || 'Recording saved.'));
+      setStatus(
+        result.analysis_status === 'queued'
+          ? 'Video saved. Final analysis is processing automatically.'
+          : result.analysis_error
+          ? `Video saved. Final analysis was skipped: ${result.analysis_error}`
+          : result.analysis
+            ? 'Video and final analysis saved.'
+            : (transcript ? `“${transcript}”` : (result.transcript || 'Recording saved.')),
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not save the recording.');
       setIsSaving(false);

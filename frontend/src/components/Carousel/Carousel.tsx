@@ -17,7 +17,12 @@ export function Carousel({ items, onActiveChange, onItemClick }: CarouselProps) 
       <CircularCarousel
         aspectRatio={1}
         autoplay="off"
+<<<<<<< HEAD
         cardWidth={275}
+=======
+        cardWidth={250}
+        captions
+>>>>>>> origin/DB
         draggable
         focusOnClick
         gap={64}

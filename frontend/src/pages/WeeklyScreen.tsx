@@ -6,15 +6,28 @@ import { Carousel } from '../components/Carousel/Carousel';
 import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
 import { frontendPaths } from '../lib/paths';
 
+// Supports both string summaries from DB and object summaries from UI previews
+export type JournalSummary = string | { concise_summary?: string; summary?: string };
+
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
+}
+
+function conciseSummaries(summaries: JournalSummary[]) {
+  const text = summaries
+    .map((summary) =>
+      typeof summary === 'string' ? summary : summary.concise_summary || summary.summary || '',
+    )
+    .filter(Boolean)
+    .join(' · ');
+  return text.length > 180 ? `${text.slice(0, 177).trimEnd()}…` : text;
 }
 
 export function WeeklyScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedDate, setSelectedDate] = useState('2026-10-02');
   const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
-  const [summariesByDate, setSummariesByDate] = useState<Record<string, string[]>>({});
+  const [summariesByDate, setSummariesByDate] = useState<Record<string, JournalSummary[]>>({});
   const [isLoadingSummaries, setIsLoadingSummaries] = useState(true);
   const [summariesError, setSummariesError] = useState('');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
@@ -133,7 +146,7 @@ export function WeeklyScreen() {
     }
 
     const textToSpeak = activeEntry.summaries.length > 0
-      ? activeEntry.summaries.join('. ')
+      ? conciseSummaries(activeEntry.summaries)
       : `No entries recorded for ${activeEntry.day}.`;
 
     const cacheKey = `${activeEntry.dateKey}-${textToSpeak}`;
@@ -251,7 +264,9 @@ export function WeeklyScreen() {
               onItemClick={(_item, index) => {
                 const entry = datedEntries[index];
                 if (entry) {
-                  window.location.assign(`${frontendPaths.recordings}?date=${encodeURIComponent(entry.dateKey)}`);
+                  window.location.assign(
+                    `${frontendPaths.recordings}?date=${encodeURIComponent(entry.dateKey)}`,
+                  );
                 }
               }}
             />
@@ -276,7 +291,7 @@ export function WeeklyScreen() {
                     : isLoadingSummaries
                       ? 'Checking this day…'
                       : activeEntry.summaries.length
-                        ? activeEntry.summaries.join(' · ')
+                        ? conciseSummaries(activeEntry.summaries)
                         : 'Nothing happened.'
                 }
               />

@@ -73,6 +73,9 @@ def initialize_database() -> None:
             storage_path VARCHAR(1024) NOT NULL,
             title VARCHAR(200),
             notes TEXT,
+            transcript MEDIUMTEXT NULL,
+            analysis_status VARCHAR(30) NULL,
+            analysis_error TEXT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX ix_audio_visual_logs_user_id (user_id),
             INDEX ix_audio_visual_logs_log_date (log_date),
@@ -96,6 +99,21 @@ def initialize_database() -> None:
             CONSTRAINT fk_recording_chunks_log FOREIGN KEY (log_id)
                 REFERENCES audio_visual_logs (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS recording_analysis_jobs (
+            log_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+            user_id BIGINT UNSIGNED NOT NULL,
+            journal_date DATE NULL,
+            user_time_zone VARCHAR(100) NOT NULL,
+            status VARCHAR(30) NOT NULL DEFAULT 'queued',
+            attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+            next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_error TEXT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX ix_recording_analysis_jobs_due (status, next_attempt_at),
+            CONSTRAINT fk_recording_analysis_jobs_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS journal_entries (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             user_id VARCHAR(255) NOT NULL,
@@ -104,15 +122,19 @@ def initialize_database() -> None:
             core_topic VARCHAR(200) NOT NULL,
             emotion VARCHAR(80) NOT NULL,
             summary TEXT NOT NULL,
+            analysis_json JSON NULL,
             key_takeaways JSON,
             reflection_question JSON,
             reflection_quote TEXT,
             temporal_references TEXT,
             embedding JSON,
             video_filename VARCHAR(255),
+            recording_log_id BIGINT UNSIGNED NULL,
+            analysis_json JSON NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX ix_journal_entries_user_created (user_id, created_at),
-            INDEX ix_journal_entries_topic (core_topic)
+            INDEX ix_journal_entries_topic (core_topic),
+            INDEX ix_journal_entries_recording_log (recording_log_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS important_events (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -154,14 +176,21 @@ def initialize_database() -> None:
             # created before the profile-picture and revisit-cue columns existed.
             for statement in (
                 "ALTER TABLE users ADD COLUMN profile_picture LONGBLOB NULL",
+                "ALTER TABLE journal_entries ADD COLUMN analysis_json JSON NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_suggested_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_dismissed_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN shown_count INT UNSIGNED NOT NULL DEFAULT 0",
+                "ALTER TABLE journal_entries ADD COLUMN recording_log_id BIGINT UNSIGNED NULL",
+                "ALTER TABLE journal_entries ADD COLUMN analysis_json JSON NULL",
+                "ALTER TABLE journal_entries ADD INDEX ix_journal_entries_recording_log (recording_log_id)",
+                "ALTER TABLE audio_visual_logs ADD COLUMN transcript MEDIUMTEXT NULL",
+                "ALTER TABLE audio_visual_logs ADD COLUMN analysis_status VARCHAR(30) NULL",
+                "ALTER TABLE audio_visual_logs ADD COLUMN analysis_error TEXT NULL",
             ):
                 try:
                     cursor.execute(statement)
                 except MySQLError as error:
-                    if error.args and error.args[0] != 1060:  # Duplicate column
+                    if error.args and error.args[0] not in {1060, 1061}:  # Duplicate column or index
                         raise
             cursor.execute("ALTER TABLE users MODIFY COLUMN profile_picture LONGBLOB NULL")
         connection.commit()

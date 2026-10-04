@@ -12,11 +12,11 @@
 <body class="{% block body_class %}{% endblock %}">
   <header class="site-bar">
     <a class="site-brand"
-      href="{{ url_for('main.index') if current_user.is_authenticated else url_for('main.login') }}">StormHacks</a>
+      href="{{ '/static/frontend/' if current_user.is_authenticated else '/static/frontend/login' }}">StormHacks</a>
     {% if current_user.is_authenticated %}
     <div class="account-controls">
       <span class="account-name">{{ current_user.username }}</span>
-      <a class="account-link" href="{{ url_for('main.my_videos') }}">My videos</a>
+      <a class="account-link" href="/static/frontend/my-videos">My videos</a>
       <form action="{{ url_for('main.logout') }}" method="post">
         <button class="signout-button" type="submit">Sign out</button>
       </form>
