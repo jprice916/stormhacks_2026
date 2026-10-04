@@ -5,7 +5,7 @@ import ssl
 from pathlib import Path
 
 import pymysql
-from pymysql.err import ProgrammingError
+from pymysql.err import MySQLError
 from pymysql.connections import Connection
 
 
@@ -62,6 +62,7 @@ def initialize_database() -> None:
             username VARCHAR(80) NOT NULL UNIQUE,
             email VARCHAR(254) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
+            profile_picture LONGBLOB NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS audio_visual_logs (
@@ -77,6 +78,23 @@ def initialize_database() -> None:
             INDEX ix_audio_visual_logs_log_date (log_date),
             CONSTRAINT fk_audio_visual_logs_user FOREIGN KEY (user_id)
                 REFERENCES users (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS recording_media (
+            log_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+            mime_type VARCHAR(100) NOT NULL,
+            original_filename VARCHAR(255) NOT NULL,
+            file_size_bytes BIGINT UNSIGNED NOT NULL,
+            chunk_count INT UNSIGNED NOT NULL,
+            CONSTRAINT fk_recording_media_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS recording_chunks (
+            log_id BIGINT UNSIGNED NOT NULL,
+            chunk_index INT UNSIGNED NOT NULL,
+            chunk_data MEDIUMBLOB NOT NULL,
+            PRIMARY KEY (log_id, chunk_index),
+            CONSTRAINT fk_recording_chunks_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS journal_entries (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -132,19 +150,20 @@ def initialize_database() -> None:
         with connection.cursor() as cursor:
             for statement in statements:
                 cursor.execute(statement)
-            # TEMPORARY-MIGRATION-SAFE: existing hackathon databases may have the
-            # earlier revisit_cues schema. These statements are safe to rerun and
-            # can be replaced by a formal migration tool during a later refactor.
+            # TEMPORARY-MIGRATION-SAFE: these idempotent updates support databases
+            # created before the profile-picture and revisit-cue columns existed.
             for statement in (
+                "ALTER TABLE users ADD COLUMN profile_picture LONGBLOB NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_suggested_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_dismissed_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN shown_count INT UNSIGNED NOT NULL DEFAULT 0",
             ):
                 try:
                     cursor.execute(statement)
-                except ProgrammingError as error:
+                except MySQLError as error:
                     if error.args and error.args[0] != 1060:  # Duplicate column
                         raise
+            cursor.execute("ALTER TABLE users MODIFY COLUMN profile_picture LONGBLOB NULL")
         connection.commit()
     except Exception:
         connection.rollback()

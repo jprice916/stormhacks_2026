@@ -18,9 +18,21 @@ export default defineConfig({
         target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5001',
         changeOrigin: true,
       },
+      '/logger': {
+        target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        bypass: (request) => request.method === 'GET' ? '/index.html' : undefined,
+      },
       '/api': {
         target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5001',
         changeOrigin: true,
+      },
+      '/recordings': {
+        target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        bypass: (request) => request.method === 'GET' && request.url?.split('?')[0] === '/recordings'
+          ? '/index.html'
+          : undefined,
       },
     },
   },

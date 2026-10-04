@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { BrandMark } from '../components/BrandMark';
+import { loadProfile, type Profile } from '../data/profileApi';
 
 const steps = [
   {
@@ -19,6 +21,26 @@ const steps = [
 ] as const;
 
 export function LandingPage() {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    loadProfile()
+      .then((userProfile) => {
+        if (active) setProfile(userProfile);
+      })
+      .catch(() => {
+        if (active) setProfile(null);
+      })
+      .finally(() => {
+        if (active) setHasCheckedProfile(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <main className="min-h-screen overflow-hidden bg-[#f9f6f1] text-[#473c21]">
       <div className="mx-auto max-w-7xl px-5 sm:px-10">
@@ -37,25 +59,41 @@ export function LandingPage() {
             </a>
             <a
               className="hidden text-base text-[#887445] transition-colors hover:text-[#473c21] md:inline lg:text-lg"
-              href="weekly"
+              href="/weekly"
             >
               Carousel preview
             </a>
             <a
               className="hidden text-base text-[#887445] transition-colors hover:text-[#473c21] sm:inline lg:text-lg"
-              href="profile"
+              href="/profile"
             >
               Profile
             </a>
-            <button
-              className="rounded-full border-2 border-[#998350] px-4 py-2 text-base font-medium text-[#473c21] transition-colors disabled:cursor-not-allowed sm:px-5 sm:text-lg"
-              disabled
-              type="button"
-            >
-              <a href="sign-in">
+
+            {/* Dynamic Sign in / Profile status from DB */}
+            {hasCheckedProfile && (profile ? (
+              <a
+                aria-label={`Open ${profile.name}'s profile`}
+                className="inline-flex max-w-[12rem] items-center gap-2 rounded-full border-2 border-[#998350] py-1 pl-1 pr-3 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:max-w-[16rem] sm:gap-3 sm:pr-4"
+                href="/profile"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#bca880] bg-[#eeebe4] font-serif text-base text-[#887445]">
+                  {profile.avatarUrl ? (
+                    <img alt="" className="h-full w-full object-cover" src={profile.avatarUrl} />
+                  ) : (
+                    <span aria-hidden="true">{profile.name.trim().charAt(0).toUpperCase()}</span>
+                  )}
+                </span>
+                <span className="truncate">{profile.name}</span>
+              </a>
+            ) : (
+              <a
+                className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5 sm:text-base"
+                href="/login"
+              >
                 Sign in
               </a>
-            </button>
+            ))}
           </nav>
         </header>
 
@@ -64,21 +102,28 @@ export function LandingPage() {
             <h1 className="max-w-xl font-serif text-[3rem] leading-[1.05] tracking-tight text-[#473c21] sm:text-[3.75rem] lg:text-[4.5rem]">
               Your little moments deserve to be remembered.
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-[3rem] text-[#887445] sm:text-xl sm:leading-[3.375rem]">
-              Every memory should have a special place, you can see them all in this little space
+            <p className="mt-6 max-w-xl text-lg leading-[2.2rem] text-[#887445] sm:text-xl sm:leading-[2.5rem]">
+              Every memory should have a special place, you can see them all in this little space.
             </p>
-            <div className="mt-9 flex max-w-xl justify-center">
-              <button
-                className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-base font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] disabled:cursor-not-allowed sm:text-lg"
-                disabled
-                type="button"
+
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <a
+                className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-base font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
+                href={profile ? '/logger' : '/login'}
               >
-                Sign in to get started
+                {profile ? 'Open recording studio' : 'Sign in to get started'}
                 <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
                   <path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
                 </svg>
-              </button>
+              </a>
+              <a
+                className="inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-base font-medium text-[#887445] transition-colors hover:text-[#473c21] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
+                href="/weekly"
+              >
+                Explore the carousel preview
+              </a>
             </div>
+
             <p className="mt-7 text-base text-[#998350] sm:text-lg">No perfect days required. Small steps count, too.</p>
           </div>
 

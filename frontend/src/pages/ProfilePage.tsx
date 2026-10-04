@@ -3,11 +3,12 @@ import { BrandMark } from '../components/BrandMark';
 import {
   changePassword,
   loadProfile,
+  logoutUser,
   requestAccountDeletion,
   saveProfileName,
   saveProfilePicture,
   type Profile,
-} from '../data/mockProfile';
+} from '../data/profileApi';
 import './ProfilePage.css';
 
 const maxPictureBytes = 2 * 1024 * 1024;
@@ -185,6 +186,8 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [nameError, setNameError] = useState('');
@@ -205,7 +208,12 @@ export function ProfilePage() {
     let active = true;
     loadProfile()
       .then((data) => { if (active) setProfile(data); })
-      .catch(() => { if (active) setLoadError('Your profile couldn’t be opened. Please try once more.'); })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setLoadError(error instanceof Error
+          ? error.message
+          : 'Your profile couldn’t be opened. Please try once more.');
+      })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
   }, []);
@@ -228,6 +236,10 @@ export function ProfilePage() {
   }, [isDeleteOpen, deleteState]);
 
   function closeDeleteDialog() {
+    if (deleteState === 'success') {
+      window.location.assign('/login');
+      return;
+    }
     setIsDeleteOpen(false);
     setDeletePhrase('');
     setDeleteState('idle');
@@ -265,9 +277,11 @@ export function ProfilePage() {
         URL.revokeObjectURL(localPreview);
         previewUrlRef.current = '';
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (previewUrlRef.current === localPreview) {
-          setPictureError('We couldn’t save that picture. Your preview is still here; please try again.');
+          setPictureError(error instanceof Error
+            ? error.message
+            : 'We couldn’t save that picture. Your preview is still here; please try again.');
         }
       })
       .finally(() => setIsSavingPicture(false));
@@ -285,8 +299,10 @@ export function ProfilePage() {
     try {
       setProfile(await saveProfileName(trimmedName));
       setIsEditingName(false);
-    } catch {
-      setNameError('We couldn’t save your name just now. Please try again.');
+    } catch (error) {
+      setNameError(error instanceof Error
+        ? error.message
+        : 'We couldn’t save your name just now. Please try again.');
     } finally {
       setIsSavingName(false);
     }
@@ -297,12 +313,29 @@ export function ProfilePage() {
     if (deletePhrase !== 'delete' || deleteState === 'loading') return;
     setDeleteState('loading');
     try {
-      await requestAccountDeletion();
+      await requestAccountDeletion(deletePhrase);
       setDeleteState('success');
-      setDeleteMessage('Your account deletion request has been received.');
-    } catch {
+      setDeleteMessage('Your account and saved moments have been deleted.');
+    } catch (error) {
       setDeleteState('error');
-      setDeleteMessage('We couldn’t send that request. Please try again.');
+      setDeleteMessage(error instanceof Error
+        ? error.message
+        : 'We couldn’t delete your account. Please try again.');
+    }
+  }
+
+  async function handleLogout() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    setLogoutError('');
+    try {
+      await logoutUser();
+      window.location.assign('/login');
+    } catch (error) {
+      setLogoutError(error instanceof Error
+        ? error.message
+        : 'We couldn’t sign you out. Please try again.');
+      setIsLoggingOut(false);
     }
   }
 
@@ -318,10 +351,15 @@ export function ProfilePage() {
             <span>Week by week</span>
           </a>
           <nav aria-label="Main navigation" className="profile-navigation">
-            <a href="weekly">My weeks</a>
+            <a href="/weekly">My weeks</a>
             <span aria-current="page" className="profile-current-page">Profile</span>
+            <button className="profile-button profile-button--quiet profile-button--small" disabled={isLoggingOut} onClick={handleLogout} type="button">
+              {isLoggingOut ? 'Signing out…' : 'Log out'}
+            </button>
           </nav>
         </header>
+
+        {logoutError ? <p className="profile-inline-error" role="alert">{logoutError}</p> : null}
 
         <div className="profile-page-intro">
           <div>
@@ -418,6 +456,14 @@ export function ProfilePage() {
                   <span aria-hidden="true" className="profile-note-sparkle">✳</span>
                   <p className="profile-handwritten">Little by little is still forward.</p>
                 </div>
+                <button
+                  className="profile-button profile-button--quiet profile-button--small profile-signout-button"
+                  disabled={isLoggingOut}
+                  onClick={handleLogout}
+                  type="button"
+                >
+                  {isLoggingOut ? 'Signing out…' : 'Sign out'}
+                </button>
               </div>
               <svg aria-hidden="true" className="profile-hero-doodle" fill="none" viewBox="0 0 74 78">
                 <path d="M36 8c2 12 8 17 21 19-13 3-19 8-21 22-3-14-8-19-21-22 13-2 18-7 21-19Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
@@ -431,7 +477,7 @@ export function ProfilePage() {
               <div>
                 <p className="profile-eyebrow">If you’re sure</p>
                 <h2 className="delete-title profile-handwritten" id="delete-title">Ready to close this little chapter?</h2>
-                <p className="delete-copy">You can request to delete your account and all the moments you’ve saved.</p>
+                <p className="delete-copy">Delete your account and the moments you’ve saved.</p>
               </div>
               <button
                 className="profile-button profile-button--warm"
@@ -440,7 +486,7 @@ export function ProfilePage() {
                 ref={deleteButtonRef}
                 type="button"
               >
-                {deleteState === 'success' ? 'Request sent' : 'Delete account'}
+                {deleteState === 'success' ? 'Account deleted' : 'Delete account'}
               </button>
             </section>
           </>
@@ -459,7 +505,7 @@ export function ProfilePage() {
             {deleteState === 'success' ? (
               <div className="delete-success">
                 <p className="profile-eyebrow">Received</p>
-                <h2 className="profile-modal-title profile-handwritten" id="delete-modal-title">We’ve got your note.</h2>
+                <h2 className="profile-modal-title profile-handwritten" id="delete-modal-title">Your account is deleted.</h2>
                 <p className="profile-modal-copy" id="delete-description">{deleteMessage}</p>
                 <button className="profile-button profile-button--primary" onClick={closeDeleteDialog} type="button">Done for now</button>
               </div>
@@ -483,7 +529,7 @@ export function ProfilePage() {
                   {deleteMessage ? <p className="profile-inline-error" role="alert">{deleteMessage}</p> : null}
                   <div className="delete-actions">
                     <button className="profile-button profile-button--primary" disabled={deletePhrase !== 'delete' || deleteState === 'loading'} type="submit">
-                      {deleteState === 'loading' ? <><span aria-hidden="true" className="tiny-spinner" />Sending…</> : 'Yes, delete my account'}
+                      {deleteState === 'loading' ? <><span aria-hidden="true" className="tiny-spinner" />Deleting…</> : 'Yes, delete my account'}
                     </button>
                     <button className="profile-button profile-button--quiet" disabled={deleteState === 'loading'} onClick={closeDeleteDialog} type="button">Keep my account</button>
                   </div>

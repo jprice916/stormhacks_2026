@@ -1,6 +1,6 @@
 """TiDB persistence helpers for recorded audio and video."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from app.database import get_connection
 
@@ -116,17 +116,29 @@ def create_database_recording(
         connection.close()
 
 
-def get_video_logs_for_user(user_id: int) -> list[dict]:
-    """Return one user's recorded-video metadata, newest first."""
+def get_video_logs_for_user(user_id: int, recording_date: date | None = None) -> list[dict]:
+    """Return one user's saved recording metadata, optionally for one calendar day."""
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
+            query = """SELECT logs.id, logs.user_id, logs.log_date, logs.media_type,
+                              logs.storage_path, logs.title, logs.notes, logs.created_at,
+                              media.mime_type, media.original_filename,
+                              media.file_size_bytes, media.chunk_count
+                       FROM audio_visual_logs AS logs
+                       JOIN recording_media AS media ON media.log_id = logs.id
+                       WHERE logs.user_id = %s
+                         AND logs.media_type IN ('audio', 'video', 'audio_video')"""
+            params: list = [user_id]
+            if recording_date is not None:
+                start = datetime.combine(recording_date, time.min)
+                end = start + timedelta(days=1)
+                query += " AND logs.log_date >= %s AND logs.log_date < %s"
+                params.extend((start, end))
+            query += " ORDER BY logs.log_date DESC, logs.id DESC"
             cursor.execute(
-                """SELECT id, log_date, storage_path, title, notes
-                   FROM audio_visual_logs
-                   WHERE user_id = %s AND media_type IN ('video', 'audio_video')
-                   ORDER BY log_date DESC, id DESC""",
-                (user_id,),
+                query,
+                tuple(params),
             )
             return cursor.fetchall()
     finally:

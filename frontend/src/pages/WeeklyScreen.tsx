@@ -3,7 +3,7 @@ import { Agent } from '../components/Agent/Agent';
 import { AgentSidebar } from '../components/Agent/AgentSidebar';
 import { Bubble } from '../components/Bubble/Bubble';
 import { Carousel } from '../components/Carousel/Carousel';
-import { weeklyPreviewEntries, weeklyPreviewItems } from '../data/weeklyPreview';
+import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
 
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
@@ -12,6 +12,10 @@ function formatDate(date: Date) {
 export function WeeklyScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedDate, setSelectedDate] = useState('2026-10-02');
+  const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
+  const [summariesByDate, setSummariesByDate] = useState<Record<string, string[]>>({});
+  const [isLoadingSummaries, setIsLoadingSummaries] = useState(true);
+  const [summariesError, setSummariesError] = useState('');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
 
   // Audio / TTS state
@@ -24,25 +28,62 @@ export function WeeklyScreen() {
   const weekPickerRef = useRef<HTMLInputElement>(null);
   const closeAgentSidebar = useCallback(() => setIsAgentSidebarOpen(false), []);
 
-  // Compute Monday week start and entries dynamically
-  const [year, month, day] = selectedDate.split('-').map(Number);
-  const weekStartDate = new Date(year, month - 1, day);
-  weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7));
+  // Fetch summaries from DB backend whenever the selected week changes
+  useEffect(() => {
+    let active = true;
+    setSummariesByDate({});
+    setIsLoadingSummaries(true);
+    setSummariesError('');
+    loadWeeklySummaries(weekStartDate)
+      .then((summaries) => {
+        if (active) setSummariesByDate(summaries);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setSummariesByDate({});
+        setSummariesError(
+          error instanceof Error ? error.message : 'Journal summaries could not be loaded.',
+        );
+      })
+      .finally(() => {
+        if (active) setIsLoadingSummaries(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [weekStartDate]);
 
-  const datedEntries = weeklyPreviewEntries.map((entry, index) => {
-    const date = new Date(weekStartDate);
-    date.setDate(weekStartDate.getDate() + index);
+  const [weekYear, weekMonth, weekDay] = weekStartDate.split('-').map(Number);
+
+  const datedEntries = weekDayNames.map((day, index) => {
+    // Carousel is Monday through Sunday; weekStartDate is Sunday
+    const dayOffset = index === 6 ? 0 : index + 1;
+    const date = new Date(weekYear, weekMonth - 1, weekDay + dayOffset);
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return {
-      ...entry,
+      day,
+      dateKey,
       dateLabel: formatDate(date),
+      summaries: summariesByDate[dateKey] ?? [],
     };
   });
 
-  const carouselItems = weeklyPreviewItems.map((item, index) => {
+  const carouselItems = weeklyCarouselTemplates.map((item, index) => {
     const entry = datedEntries[index];
+    const hasSummaries = entry.summaries.length > 0;
+    const status = isLoadingSummaries
+      ? 'Checking journal…'
+      : summariesError
+        ? 'Summaries unavailable'
+        : hasSummaries
+          ? `${entry.summaries.length} entr${entry.summaries.length === 1 ? 'y' : 'ies'}`
+          : 'Nothing happened';
+
     return {
       ...item,
-      subtitle: `${entry.dateLabel} · ${entry.hasData ? 'Data available' : 'No data'}`,
+      src: `${import.meta.env.BASE_URL}assets/${hasSummaries ? 'data-state.svg' : 'empty-state.svg'}`,
+      alt: hasSummaries ? `${entry.day} with journal summaries` : `${entry.day} with no journal summaries`,
+      subtitle: `${entry.dateLabel} · ${status}`,
     };
   });
 
@@ -59,7 +100,7 @@ export function WeeklyScreen() {
     setIsLoadingAudio(false);
   }, []);
 
-  // Stop playback whenever user slides to a different day
+  // Stop playback whenever user slides between days
   const handleActiveCarouselChange = (index: number) => {
     stopAudio();
     setActiveIndex(index);
@@ -88,8 +129,11 @@ export function WeeklyScreen() {
       return;
     }
 
-    const textToSpeak = activeEntry.message || `No entries recorded for ${activeEntry.day}.`;
-    const cacheKey = `${selectedDate}-${activeEntry.day}-${textToSpeak}`;
+    const textToSpeak = activeEntry.summaries.length > 0
+      ? activeEntry.summaries.join('. ')
+      : `No entries recorded for ${activeEntry.day}.`;
+
+    const cacheKey = `${activeEntry.dateKey}-${textToSpeak}`;
 
     try {
       setIsLoadingAudio(true);
@@ -137,7 +181,15 @@ export function WeeklyScreen() {
   const handleWeekDateChange = (value: string) => {
     if (!value) return;
     stopAudio();
+
+    const [y, m, d] = value.split('-').map(Number);
+    const chosenDate = new Date(y, m - 1, d);
+    chosenDate.setDate(chosenDate.getDate() - chosenDate.getDay());
+
+    const formattedWeekStart = `${chosenDate.getFullYear()}-${String(chosenDate.getMonth() + 1).padStart(2, '0')}-${String(chosenDate.getDate()).padStart(2, '0')}`;
+
     setSelectedDate(value);
+    setWeekStartDate(formattedWeekStart);
   };
 
   return (
@@ -163,7 +215,7 @@ export function WeeklyScreen() {
                 }}
                 type="button"
               >
-                Week of {formatDate(weekStartDate)}
+                Week of {formatDate(new Date(weekYear, weekMonth - 1, weekDay))}
               </button>
               <input
                 aria-label="Choose a date in the week"
@@ -177,7 +229,7 @@ export function WeeklyScreen() {
             <a
               aria-label="Open profile"
               className="flex h-12 w-12 items-center justify-center rounded-full border border-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700"
-              href="profile"
+              href="/profile"
             >
               <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
                 <circle cx="16" cy="16" r="13" stroke="currentColor" strokeWidth="1.5" />
@@ -190,7 +242,16 @@ export function WeeklyScreen() {
             aria-label="Weekly highlights"
             className="flex flex-1 items-center py-8 sm:py-10 lg:flex-none lg:shrink-0"
           >
-            <Carousel items={carouselItems} onActiveChange={handleActiveCarouselChange} />
+            <Carousel
+              items={carouselItems}
+              onActiveChange={handleActiveCarouselChange}
+              onItemClick={(_item, index) => {
+                const entry = datedEntries[index];
+                if (entry) {
+                  window.location.assign(`/recordings?date=${encodeURIComponent(entry.dateKey)}`);
+                }
+              }}
+            />
           </section>
 
           <section
@@ -205,14 +266,22 @@ export function WeeklyScreen() {
 
             <div className="relative flex-1 lg:min-h-[6rem]">
               <Bubble
-                heading={`On ${activeEntry.day}, ${activeEntry.dateLabel}, you ${activeEntry.hasData ? 'achieved…' : 'had a quiet day…'}`}
-                text={activeEntry.message}
+                heading={`Journal summaries · ${activeEntry.day}, ${activeEntry.dateLabel}`}
+                text={
+                  summariesError
+                    ? summariesError
+                    : isLoadingSummaries
+                      ? 'Checking this day…'
+                      : activeEntry.summaries.length
+                        ? activeEntry.summaries.join(' · ')
+                        : 'Nothing happened.'
+                }
               />
 
               <button
                 aria-label={isPlaying ? 'Pause spoken summary' : 'Listen to spoken summary'}
                 className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white/90 px-3 py-1 text-xs font-medium text-stone-700 shadow-sm backdrop-blur-sm transition-all hover:border-stone-400 hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-700 disabled:opacity-50"
-                disabled={isLoadingAudio}
+                disabled={isLoadingAudio || isLoadingSummaries}
                 onClick={toggleTTS}
                 type="button"
               >
