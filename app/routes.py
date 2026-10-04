@@ -64,6 +64,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 @main.get("/")
 @main.get("/weekly")
 @main.get("/profile")
+@main.get("/voice-settings")
 @login_required
 def index():
     frontend_dir = Path(current_app.static_folder) / "frontend"

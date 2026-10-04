@@ -1,5 +1,6 @@
 import type { CircularCarouselItem } from '../components/Carousel/CircularCarousel';
 
+
 export interface WeeklyPreviewEntry {
   day: string;
   hasData: boolean;

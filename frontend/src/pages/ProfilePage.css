@@ -37,25 +37,17 @@
   display: inline-flex;
   align-items: center;
   gap: 11px;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-gaegu);
   font-size: 22px;
   font-style: italic;
   letter-spacing: 0.02em;
 }
 
-.profile-brand-mark {
-  display: grid;
-  width: 38px;
+.profile-brand-logo {
+  display: block;
+  width: auto;
   height: 38px;
-  place-items: center;
-  border: 1.5px solid var(--ink);
-  border-radius: 50%;
-  background: #e7ddc5;
-}
-
-.profile-brand-mark svg {
-  width: 22px;
-  height: 22px;
+  object-fit: contain;
 }
 
 .profile-navigation {
@@ -111,7 +103,7 @@
 .profile-page-caption {
   margin: 5px 0 0;
   color: #756440;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-gaegu);
   font-size: 20px;
   font-style: italic;
 }
@@ -245,7 +237,7 @@
 .profile-form-note {
   margin: 8px 0 0;
   color: #a15e49;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -260,7 +252,7 @@
 }
 
 .profile-handwritten {
-  font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-weight: 500;
   letter-spacing: -0.045em;
 }
@@ -457,7 +449,7 @@
 .profile-section-title {
   margin: 3px 0 0;
   color: #40351e;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-gaegu);
   font-size: 23px;
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -617,7 +609,7 @@
   align-items: flex-start;
   gap: 8px;
   margin: -3px 0 0;
-  font-family: 'Segoe Print', 'Bradley Hand', cursive;
+  font-family: var(--font-gaegu);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -684,7 +676,7 @@
 }
 
 .profile-footer span:first-child {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-gaegu);
   font-size: 14px;
   font-style: italic;
 }
@@ -732,7 +724,7 @@
   top: 25px;
   right: 28px;
   color: #c08970;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-size: 35px;
   transform: rotate(-12deg);
 }
@@ -754,7 +746,7 @@
 
 .profile-modal-copy strong {
   color: #57472a;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-weight: 700;
 }
 
@@ -791,8 +783,7 @@
     font-size: 19px;
   }
 
-  .profile-brand-mark {
-    width: 34px;
+  .profile-brand-logo {
     height: 34px;
   }
 

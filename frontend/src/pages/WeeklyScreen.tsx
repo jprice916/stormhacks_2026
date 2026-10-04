@@ -12,8 +12,6 @@ function formatDate(date: Date) {
 export function WeeklyScreen() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedDate, setSelectedDate] = useState('2026-10-02');
-  const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
-  const [weekStartLabel, setWeekStartLabel] = useState('September 27');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
 
   // Audio / TTS state
@@ -26,10 +24,14 @@ export function WeeklyScreen() {
   const weekPickerRef = useRef<HTMLInputElement>(null);
   const closeAgentSidebar = useCallback(() => setIsAgentSidebarOpen(false), []);
 
-  const [weekYear, weekMonth, weekDay] = weekStartDate.split('-').map(Number);
+  // Compute Monday week start and entries dynamically
+  const [year, month, day] = selectedDate.split('-').map(Number);
+  const weekStartDate = new Date(year, month - 1, day);
+  weekStartDate.setDate(weekStartDate.getDate() - ((weekStartDate.getDay() + 6) % 7));
+
   const datedEntries = weeklyPreviewEntries.map((entry, index) => {
-    const dayOffset = index === 6 ? 0 : index + 1;
-    const date = new Date(weekYear, weekMonth - 1, weekDay + dayOffset);
+    const date = new Date(weekStartDate);
+    date.setDate(weekStartDate.getDate() + index);
     return {
       ...entry,
       dateLabel: formatDate(date),
@@ -38,10 +40,9 @@ export function WeeklyScreen() {
 
   const carouselItems = weeklyPreviewItems.map((item, index) => {
     const entry = datedEntries[index];
-    const status = entry.hasData ? 'Data available' : 'No data';
     return {
       ...item,
-      subtitle: `${entry.dateLabel} · ${status}`,
+      subtitle: `${entry.dateLabel} · ${entry.hasData ? 'Data available' : 'No data'}`,
     };
   });
 
@@ -75,14 +76,12 @@ export function WeeklyScreen() {
   }, [stopAudio]);
 
   const toggleTTS = async () => {
-    // If currently playing, pause it
     if (isPlaying && currentAudioRef.current) {
       currentAudioRef.current.pause();
       setIsPlaying(false);
       return;
     }
 
-    // If audio is paused mid-way, resume
     if (currentAudioRef.current && !isPlaying && currentAudioRef.current.currentTime > 0) {
       currentAudioRef.current.play();
       setIsPlaying(true);
@@ -90,7 +89,7 @@ export function WeeklyScreen() {
     }
 
     const textToSpeak = activeEntry.message || `No entries recorded for ${activeEntry.day}.`;
-    const cacheKey = `${weekStartDate}-${activeEntry.day}-${textToSpeak}`;
+    const cacheKey = `${selectedDate}-${activeEntry.day}-${textToSpeak}`;
 
     try {
       setIsLoadingAudio(true);
@@ -137,17 +136,8 @@ export function WeeklyScreen() {
 
   const handleWeekDateChange = (value: string) => {
     if (!value) return;
-
     stopAudio();
-    const [year, month, day] = value.split('-').map(Number);
-    const chosenDate = new Date(year, month - 1, day);
-    chosenDate.setDate(chosenDate.getDate() - chosenDate.getDay());
-
     setSelectedDate(value);
-    setWeekStartDate(
-      `${chosenDate.getFullYear()}-${String(chosenDate.getMonth() + 1).padStart(2, '0')}-${String(chosenDate.getDate()).padStart(2, '0')}`,
-    );
-    setWeekStartLabel(formatDate(chosenDate));
   };
 
   return (
@@ -173,7 +163,7 @@ export function WeeklyScreen() {
                 }}
                 type="button"
               >
-                Week of {weekStartLabel}
+                Week of {formatDate(weekStartDate)}
               </button>
               <input
                 aria-label="Choose a date in the week"
