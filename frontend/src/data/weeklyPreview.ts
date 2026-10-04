@@ -54,7 +54,7 @@ export const weeklyPreviewEntries: WeeklyPreviewEntry[] = [
 ];
 
 export const weeklyPreviewItems: CircularCarouselItem[] = weeklyPreviewEntries.map((entry) => ({
-  src: entry.hasData ? '/assets/data-state.svg' : '/assets/empty-state.svg',
+  src: entry.hasData ? `${import.meta.env.BASE_URL}assets/data-state.svg` : `${import.meta.env.BASE_URL}assets/empty-state.svg`,
   alt: entry.hasData ? 'Preview slot with data' : 'Preview slot with no data',
   title: entry.day,
   subtitle: entry.hasData ? 'Data available' : 'No data',
