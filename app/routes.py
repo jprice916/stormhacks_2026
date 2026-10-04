@@ -33,6 +33,7 @@ from app.models.journal_entry import JournalEntry
 from app.media_logs import (
     create_database_recording,
     get_database_recording,
+    get_recording_analysis_input,
     get_video_logs_for_user,
     update_recording_analysis_state,
     user_owns_media,
@@ -597,6 +598,50 @@ def _list_recordings():
     return jsonify(videos=response_videos)
 
 
+def _save_final_recording_analysis(
+    *, log_id: int, user_id: str, filename: str, transcript: str,
+    current_date: str | None, user_time_zone: str,
+) -> tuple[dict | None, int | None, str | None]:
+    """Analyze one already-confirmed recording and link its entry in TiDB."""
+    try:
+        update_recording_analysis_state(log_id, transcript=transcript, status="processing")
+        analysis = gemini_service.analyze_transcript(
+            transcript, current_date=current_date, user_time_zone=user_time_zone,
+        )
+        try:
+            embedding = gemini_service.generate_embedding(transcript)
+        except GeminiRequestError:
+            # Revisit matching can be added later; an unavailable embedding service
+            # must not prevent the user's finished diary entry from being stored.
+            current_app.logger.exception("Could not create recording embedding")
+            embedding = None
+        entry_id = db_service.save_entry(
+            JournalEntry(
+                user_id=user_id,
+                transcript=transcript,
+                entry_type=analysis.get("entry_type", "general"),
+                summary=analysis.get("summary", ""),
+                core_topic=analysis.get("core_topic", ""),
+                embedding=embedding,
+                video_filename=filename,
+                recording_log_id=log_id,
+            ),
+            analysis,
+        )
+        update_recording_analysis_state(log_id, status="saved")
+        return analysis, entry_id, None
+    except (GeminiRequestError, MySQLError) as error:
+        current_app.logger.exception("Could not save final recording analysis")
+        analysis_error = str(error)
+        try:
+            update_recording_analysis_state(
+                log_id, transcript=transcript, status="failed", error=analysis_error,
+            )
+        except MySQLError:
+            current_app.logger.exception("Could not record final-analysis failure")
+        return None, None, analysis_error
+
+
 @main.route("/api/recordings", methods=["GET", "POST"])
 @login_required
 def save_recording():
@@ -648,42 +693,14 @@ def save_recording():
     analysis_error = None
     transcript = request.form.get("transcript", "").strip()
     if transcript:
-        try:
-            update_recording_analysis_state(log_id, transcript=transcript, status="processing")
-            analysis = gemini_service.analyze_transcript(
-                transcript,
-                current_date=request.form.get("current_local_date"),
-                user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
-            )
-            try:
-                embedding = gemini_service.generate_embedding(transcript)
-            except GeminiRequestError:
-                # An embedding improves future revisit matching, but must not discard
-                # a completed journal analysis when the embedding quota is unavailable.
-                current_app.logger.exception("Could not create recording embedding")
-                embedding = None
-            entry_id = db_service.save_entry(
-                JournalEntry(
-                    user_id=current_user.get_id(),
-                    transcript=transcript,
-                    entry_type=analysis.get("entry_type", "general"),
-                    summary=analysis.get("summary", ""),
-                    core_topic=analysis.get("core_topic", ""),
-                    embedding=embedding,
-                    video_filename=original_name,
-                    recording_log_id=log_id,
-                ),
-                analysis,
-            )
-            update_recording_analysis_state(log_id, status="saved")
-        except (GeminiRequestError, MySQLError) as error:
-            current_app.logger.exception("Could not save final recording analysis")
-            analysis = None
-            analysis_error = str(error)
-            try:
-                update_recording_analysis_state(log_id, transcript=transcript, status="failed", error=analysis_error)
-            except MySQLError:
-                current_app.logger.exception("Could not record final-analysis failure")
+        analysis, entry_id, analysis_error = _save_final_recording_analysis(
+            log_id=log_id,
+            user_id=current_user.get_id(),
+            filename=original_name,
+            transcript=transcript,
+            current_date=request.form.get("current_local_date"),
+            user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+        )
     else:
         analysis_error = "No browser transcript was captured, so final analysis was skipped."
         try:
@@ -702,6 +719,36 @@ def save_recording():
         entry_id=entry_id,
         analysis_error=analysis_error,
     ), 201
+
+
+@main.post("/api/recordings/<int:log_id>/analysis")
+@login_required
+def retry_recording_analysis(log_id: int):
+    """Retry final analysis for a confirmed recording with a saved browser transcript."""
+    try:
+        recording = get_recording_analysis_input(int(current_user.get_id()), log_id)
+    except MySQLError:
+        current_app.logger.exception("Could not load recording for analysis retry")
+        return jsonify(message="Could not load that recording."), 503
+    if recording is None:
+        return jsonify(message="Recording not found."), 404
+    if recording.get("analysis_status") == "saved":
+        return jsonify(message="Final analysis is already saved."), 409
+    transcript = str(recording.get("transcript") or "").strip()
+    if not transcript:
+        return jsonify(message="This recording has no browser transcript to analyze."), 400
+
+    analysis, entry_id, analysis_error = _save_final_recording_analysis(
+        log_id=log_id,
+        user_id=current_user.get_id(),
+        filename=str(recording.get("title") or "webcam-recording.webm"),
+        transcript=transcript,
+        current_date=datetime.now().date().isoformat(),
+        user_time_zone=request.json.get("user_time_zone", "America/Vancouver") if request.is_json else "America/Vancouver",
+    )
+    if analysis_error:
+        return jsonify(message=analysis_error), 503
+    return jsonify(stored=True, entry_id=entry_id, analysis=analysis)
 
 
 @main.get("/recordings/<int:log_id>")

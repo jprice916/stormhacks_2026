@@ -163,6 +163,22 @@ def update_recording_analysis_state(
         connection.close()
 
 
+def get_recording_analysis_input(user_id: int, log_id: int) -> dict | None:
+    """Return the saved browser transcript and title for an owned recording."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT id, title, transcript, analysis_status
+                   FROM audio_visual_logs
+                   WHERE id = %s AND user_id = %s AND media_type IN ('video', 'audio_video')""",
+                (log_id, user_id),
+            )
+            return cursor.fetchone()
+    finally:
+        connection.close()
+
+
 def user_owns_media(user_id: int, storage_path: str) -> bool:
     """Check that a media route belongs to the signed-in user."""
     connection = get_connection()

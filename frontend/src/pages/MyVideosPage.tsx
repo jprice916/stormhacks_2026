@@ -38,21 +38,37 @@ async function readJson(response: Response) {
 export function MyVideosPage() {
   const [videos, setVideos] = useState<VideoRecord[]>([]);
   const [message, setMessage] = useState('Loading your videos…');
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+
+  const loadVideos = async () => {
+    const response = await fetch('/api/recordings');
+    const result = await readJson(response);
+    if (!response.ok) throw new Error(result.message || 'Could not load videos.');
+    setVideos(result.videos || []);
+    setMessage('');
+  };
 
   useEffect(() => {
-    const loadVideos = async () => {
-      try {
-        const response = await fetch('/api/recordings');
-        const result = await readJson(response);
-        if (!response.ok) throw new Error(result.message || 'Could not load videos.');
-        setVideos(result.videos || []);
-        setMessage('');
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Could not load videos.');
-      }
-    };
-    void loadVideos();
+    void loadVideos().catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load videos.'));
   }, []);
+
+  const retryAnalysis = async (video: VideoRecord) => {
+    setRetryingId(video.id);
+    try {
+      const response = await fetch(`/api/recordings/${video.id}/analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+      });
+      const result = await readJson(response);
+      if (!response.ok) throw new Error(result.message || 'Could not retry final analysis.');
+      await loadVideos();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not retry final analysis.');
+    } finally {
+      setRetryingId(null);
+    }
+  };
 
   return (
     <main>
@@ -89,6 +105,7 @@ export function MyVideosPage() {
               {video.analysis_status === 'skipped' && <p><strong>Reason:</strong> {video.analysis_error || 'No browser transcript was available.'}</p>}
               {video.analysis_status === 'processing' && <p>Final analysis is still processing.</p>}
               {!video.analysis_status && <p>This older recording was saved before analysis status was tracked.</p>}
+              {video.analysis_status === 'failed' && video.transcript_available && <button type="button" onClick={() => void retryAnalysis(video)} disabled={retryingId === video.id}>{retryingId === video.id ? 'Retrying analysis…' : 'Retry analysis'}</button>}
             </>}
           </div>
         </section>

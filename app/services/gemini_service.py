@@ -23,6 +23,7 @@ class GeminiService:
         self.use_mock = os.getenv("USE_MOCK_GEMINI", "false").lower() == "true"
         self.api_key = os.getenv("JAYS_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.analysis_model = os.getenv("GEMINI_ANALYSIS_MODEL", "gemini-3.5-flash-lite")
+        self.analysis_fallback_model = os.getenv("GEMINI_ANALYSIS_FALLBACK_MODEL", "gemini-3.5-flash")
         self.live_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.5-flash-lite")
         self.client = None
         if self.use_mock:
@@ -42,23 +43,35 @@ class GeminiService:
         from google.genai import types
 
         prompt = self._prompt(transcript, current_date or date.today().isoformat(), user_time_zone)
-        try:
-            response = self.client.models.generate_content(
-                model=self.analysis_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
-            )
-            cleaned = (response.text or "").strip()
-            fence = chr(96) * 3
-            if cleaned.startswith(fence):
-                cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith(fence):
-                cleaned = cleaned[:-3].strip()
-            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            return self._normalize(json.loads(match.group(0) if match else cleaned), transcript)
-        except Exception as error:
-            print(f"[GeminiService] Analysis error: {error}.")
-            raise GeminiRequestError("Gemini could not analyze this recording.") from error
+        models = list(dict.fromkeys((self.analysis_model, self.analysis_fallback_model)))
+        last_error: Exception | None = None
+        for model in models:
+            try:
+                response = self.client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type="application/json"),
+                )
+                cleaned = (response.text or "").strip()
+                fence = chr(96) * 3
+                if cleaned.startswith(fence):
+                    cleaned = cleaned.split("\n", 1)[-1]
+                if cleaned.endswith(fence):
+                    cleaned = cleaned[:-3].strip()
+                match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                return self._normalize(json.loads(match.group(0) if match else cleaned), transcript)
+            except Exception as error:
+                last_error = error
+                print(f"[GeminiService] Analysis error from {model}: {error}.")
+
+        error_text = str(last_error or "unknown error")
+        if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
+            message = "Gemini's analysis quota is currently exhausted. Try analysis again later."
+        elif "503" in error_text or "UNAVAILABLE" in error_text:
+            message = "Gemini is temporarily busy. Try analysis again shortly."
+        else:
+            message = "Gemini could not analyze this recording."
+        raise GeminiRequestError(message) from last_error
 
     @staticmethod
     def _prompt(transcript: str, current_date: str, user_time_zone: str) -> str:
