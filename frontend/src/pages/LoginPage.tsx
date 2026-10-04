@@ -30,11 +30,7 @@ export function LoginPage() {
                 return;
             }
 
-<<<<<<< HEAD
             window.location.assign(result.redirect || frontendPaths.home);
-=======
-            window.location.assign(result.redirect || '/static/frontend/profile');
->>>>>>> origin/DB
         } catch (error) {
             setError(error instanceof TypeError
                 ? 'Could not reach Flask. Start the Flask app with “python run.py” and try again.'
@@ -49,11 +45,7 @@ export function LoginPage() {
     return (
         <main className="flex min-h-screen items-center justify-center bg-[#f9f6f1] px-5 py-12 text-[#473c21]">
             <section className="w-full max-w-md border-2 border-[#473c21] bg-[#f9f6f1] p-7 shadow-[7px_7px_0_#b39e6c] sm:p-10">
-<<<<<<< HEAD
                 <a className="font-serif text-lg italic text-[#887445]" href={frontendPaths.home}>
-=======
-                <a className="font-serif text-lg italic text-[#887445]" href="/static/frontend/">
->>>>>>> origin/DB
                     Week by week
                 </a>
                 <p className="mt-10 text-xs font-medium uppercase tracking-[0.17em] text-[#887445]">

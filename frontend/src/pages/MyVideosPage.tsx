@@ -62,11 +62,7 @@ export function MyVideosPage() {
     <main>
       <h1>My videos</h1>
       <p>Debug page: videos stored for the signed-in account.</p>
-<<<<<<< HEAD
       <p><a href={frontendPaths.logger}>Record a video</a></p>
-=======
-      <p><a href="/static/frontend/logger">Record a video</a></p>
->>>>>>> origin/DB
 
       {message && <p role="status">{message}</p>}
       {!message && videos.length === 0 && <p>No saved videos yet.</p>}

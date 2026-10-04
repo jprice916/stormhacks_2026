@@ -678,11 +678,17 @@ def _list_recordings():
             return jsonify(message="Use a date in YYYY-MM-DD format."), 400
 
     _schedule_due_recording_analysis_jobs()
+    user_id = int(current_user.get_id())
     try:
-        videos = get_video_logs_for_user(int(current_user.get_id()), recording_date)
+        videos = get_video_logs_for_user(user_id, recording_date)
     except MySQLError:
         current_app.logger.exception("Could not list recordings from TiDB")
         return jsonify(message="Could not load recordings from TiDB."), 503
+
+    def _to_iso(val):
+        if val is None:
+            return None
+        return val.isoformat() if hasattr(val, "isoformat") else str(val)
 
     response_videos = []
     for video in videos:
@@ -690,25 +696,27 @@ def _list_recordings():
         if isinstance(analysis, str):
             try:
                 analysis = json.loads(analysis)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 analysis = None
+
         response_videos.append({
-            "id": video["id"],
-            "user_id": video["user_id"],
-            "log_date": video["log_date"].isoformat(),
-            "media_type": video["media_type"],
-            "storage_path": video["storage_path"],
-            "title": video["title"],
-            "notes": video["notes"],
-            "created_at": video["created_at"].isoformat(),
-            "filename": video["title"] or "Recorded video",
-            "recorded_at": video["log_date"].isoformat(),
-            "recording_url": video["storage_path"],
+            "id": video.get("id"),
+            "user_id": video.get("user_id", user_id),
+            "log_date": _to_iso(video.get("log_date")),
+            "media_type": video.get("media_type"),
+            "storage_path": video.get("storage_path"),
+            "title": video.get("title"),
+            "notes": video.get("notes"),
+            "created_at": _to_iso(video.get("created_at")),
+            "filename": video.get("title") or "Recorded video",
+            "recorded_at": _to_iso(video.get("log_date")),
+            "recording_url": video.get("storage_path"),
             "analysis": analysis if isinstance(analysis, dict) else None,
             "analysis_status": video.get("analysis_status"),
             "analysis_error": video.get("analysis_error"),
             "transcript_available": bool(video.get("transcript")),
         })
+
     return jsonify(videos=response_videos)
 
 

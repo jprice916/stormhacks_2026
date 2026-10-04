@@ -640,7 +640,9 @@
 }
 
 @keyframes profile-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .delete-section {
@@ -890,6 +892,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .profile-page *,
   .profile-page *::before,
   .profile-page *::after {

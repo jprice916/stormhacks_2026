@@ -238,11 +238,7 @@ export function ProfilePage() {
 
   function closeDeleteDialog() {
     if (deleteState === 'success') {
-<<<<<<< HEAD
       window.location.assign(frontendPaths.login);
-=======
-      window.location.assign('/static/frontend/login');
->>>>>>> origin/DB
       return;
     }
     setIsDeleteOpen(false);
@@ -335,11 +331,7 @@ export function ProfilePage() {
     setLogoutError('');
     try {
       await logoutUser();
-<<<<<<< HEAD
       window.location.assign(frontendPaths.login);
-=======
-      window.location.assign('/static/frontend/login');
->>>>>>> origin/DB
     } catch (error) {
       setLogoutError(error instanceof Error
         ? error.message
@@ -355,26 +347,12 @@ export function ProfilePage() {
     <main className="profile-page">
       <div className="profile-shell">
         <header className="profile-topbar">
-<<<<<<< HEAD
           <a aria-label="Week by week home" className="profile-brand" href={frontendPaths.home}>
             <BrandMark className="profile-brand-logo" />
             <span>Week by week</span>
           </a>
           <nav aria-label="Main navigation" className="profile-navigation">
             <a href={frontendPaths.weekly}>My weeks</a>
-=======
-          <a aria-label="Week by week home" className="profile-brand" href="/static/frontend/">
-            <span aria-hidden="true" className="profile-brand-mark">
-              <svg fill="none" viewBox="0 0 24 24">
-                <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.36-6.36-2.12 2.12M7.76 16.24l-2.12 2.12m12.72 0-2.12-2.12M7.76 7.76 5.64 5.64" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
-                <circle cx="12" cy="12" r="3.25" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
-            </span>
-            <span>Week by week</span>
-          </a>
-          <nav aria-label="Main navigation" className="profile-navigation">
-            <a href="/static/frontend/weekly">My weeks</a>
->>>>>>> origin/DB
             <span aria-current="page" className="profile-current-page">Profile</span>
             <button className="profile-button profile-button--quiet profile-button--small" disabled={isLoggingOut} onClick={handleLogout} type="button">
               {isLoggingOut ? 'Signing out…' : 'Log out'}
