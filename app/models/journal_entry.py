@@ -1,4 +1,5 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
+import json
 from typing import List, Optional
 
 @dataclass
@@ -8,8 +9,9 @@ class JournalEntry:
     entry_type: str # 'struggle', 'achievement', or 'general'
     summary: str
     core_topic: str
-    embedding: List[float] # 768-dim float vector from Gemini
+    embedding: Optional[List[float]] = None  # 768-dim float vector from Gemini when available
     video_filename: Optional[str] = None
+    recording_log_id: Optional[int] = None
     id: Optional[int] = None
     created_at: Optional[str] = None
 
@@ -21,6 +23,7 @@ class JournalEntry:
             "entry_type": self.entry_type,
             "summary": self.summary,
             "core_topic": self.core_topic,
-            "embedding": str(self.embedding),  # TiDB vector expects string: "[0.12, -0.04, ...]"
-            "video_filename": self.video_filename
+            "embedding": json.dumps(self.embedding) if self.embedding is not None else None,
+            "video_filename": self.video_filename,
+            "recording_log_id": self.recording_log_id,
         }

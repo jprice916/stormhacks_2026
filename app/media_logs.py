@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from app.database import get_connection
 
 RECORDING_CHUNK_BYTES = 4 * 1024 * 1024
+MAX_ANALYSIS_ATTEMPTS = 5
 
 
 def create_audio_visual_log(
@@ -137,10 +138,175 @@ def get_video_logs_for_user(user_id: int, recording_date: date | None = None) ->
                 params.extend((start, end))
             query += " ORDER BY logs.log_date DESC, logs.id DESC"
             cursor.execute(
-                query,
-                tuple(params),
+                """SELECT logs.id, logs.log_date, logs.storage_path, logs.title, logs.notes,
+                          logs.transcript, logs.analysis_status, logs.analysis_error,
+                          entries.analysis_json
+                   FROM audio_visual_logs AS logs
+                   LEFT JOIN journal_entries AS entries
+                     ON entries.recording_log_id = logs.id
+                    AND entries.user_id = logs.user_id
+                   WHERE logs.user_id = %s AND logs.media_type IN ('video', 'audio_video')
+                   ORDER BY logs.log_date DESC, logs.id DESC""",
+                (user_id,),
             )
             return cursor.fetchall()
+    finally:
+        connection.close()
+
+
+def update_recording_analysis_state(
+    log_id: int,
+    *,
+    transcript: str | None = None,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """Persist browser-transcript and final-analysis progress for a saved recording."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE audio_visual_logs
+                   SET transcript = COALESCE(%s, transcript), analysis_status = %s, analysis_error = %s
+                   WHERE id = %s""",
+                (transcript, status, error, log_id),
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def get_recording_analysis_input(user_id: int, log_id: int) -> dict | None:
+    """Return the saved browser transcript and title for an owned recording."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT id, title, transcript, analysis_status
+                   FROM audio_visual_logs
+                   WHERE id = %s AND user_id = %s AND media_type IN ('video', 'audio_video')""",
+                (log_id, user_id),
+            )
+            return cursor.fetchone()
+    finally:
+        connection.close()
+
+
+def enqueue_recording_analysis(
+    log_id: int, user_id: int, *, current_date: str | None, user_time_zone: str,
+) -> None:
+    """Add a confirmed recording to the durable final-analysis queue."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO recording_analysis_jobs
+                   (log_id, user_id, journal_date, user_time_zone, status, next_attempt_at)
+                   VALUES (%s, %s, %s, %s, 'queued', UTC_TIMESTAMP())
+                   ON DUPLICATE KEY UPDATE
+                       journal_date = VALUES(journal_date), user_time_zone = VALUES(user_time_zone),
+                       status = IF(status = 'succeeded', status, 'queued'),
+                       next_attempt_at = IF(status = 'succeeded', next_attempt_at, UTC_TIMESTAMP()),
+                       last_error = IF(status = 'succeeded', last_error, NULL)""",
+                (log_id, user_id, current_date, user_time_zone),
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def claim_recording_analysis_job(log_id: int) -> dict | None:
+    """Atomically claim one due job so duplicate workers cannot analyze it twice."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE recording_analysis_jobs
+                   SET status = 'processing', attempt_count = attempt_count + 1
+                   WHERE log_id = %s
+                     AND status IN ('queued', 'retrying')
+                     AND next_attempt_at <= UTC_TIMESTAMP()""",
+                (log_id,),
+            )
+            if cursor.rowcount != 1:
+                connection.commit()
+                return None
+            cursor.execute("SELECT * FROM recording_analysis_jobs WHERE log_id = %s", (log_id,))
+            job = cursor.fetchone()
+        connection.commit()
+        return job
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def get_due_recording_analysis_job_ids(limit: int = 10) -> list[int]:
+    """Find jobs that survived a restart and are ready for another attempt."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT log_id FROM recording_analysis_jobs
+                   WHERE status IN ('queued', 'retrying') AND next_attempt_at <= UTC_TIMESTAMP()
+                   ORDER BY next_attempt_at ASC LIMIT %s""",
+                (limit,),
+            )
+            return [int(row["log_id"]) for row in cursor.fetchall()]
+    finally:
+        connection.close()
+
+
+def finish_recording_analysis_job(log_id: int) -> None:
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE recording_analysis_jobs
+                   SET status = 'succeeded', last_error = NULL WHERE log_id = %s""",
+                (log_id,),
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def retry_or_fail_recording_analysis_job(log_id: int, attempt_count: int, error: str) -> int | None:
+    """Schedule exponential backoff and return its delay, or mark a job terminally failed."""
+    delay_seconds = min(15 * (4 ** max(0, attempt_count - 1)), 15 * 60)
+    is_terminal = attempt_count >= MAX_ANALYSIS_ATTEMPTS
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            if is_terminal:
+                cursor.execute(
+                    """UPDATE recording_analysis_jobs
+                       SET status = 'failed', last_error = %s WHERE log_id = %s""",
+                    (error, log_id),
+                )
+            else:
+                next_attempt_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=delay_seconds)
+                cursor.execute(
+                    """UPDATE recording_analysis_jobs
+                       SET status = 'retrying', next_attempt_at = %s, last_error = %s
+                       WHERE log_id = %s""",
+                    (next_attempt_at, error, log_id),
+                )
+        connection.commit()
+        return None if is_terminal else delay_seconds
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
 
