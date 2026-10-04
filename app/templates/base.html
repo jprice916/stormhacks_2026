@@ -10,6 +10,18 @@
 </head>
 
 <body class="{% block body_class %}{% endblock %}">
+  <header class="site-bar">
+    <a class="site-brand"
+      href="{{ url_for('main.index') if current_user.is_authenticated else url_for('main.login') }}">StormHacks</a>
+    {% if current_user.is_authenticated %}
+    <div class="account-controls">
+      <span class="account-name">{{ current_user.username }}</span>
+      <form action="{{ url_for('main.logout') }}" method="post">
+        <button class="signout-button" type="submit">Sign out</button>
+      </form>
+    </div>
+    {% endif %}
+  </header>
   <main class="page-shell database-shell">
     {% block content %}{% endblock %}
   </main>

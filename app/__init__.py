@@ -6,10 +6,22 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
+from flask_login import LoginManager
 
 load_dotenv()
 
 from app.database import get_tidb_config
+from app.services.login_service import LoginService
+
+login_manager = LoginManager()
+login_manager.login_view = "main.login"
+login_manager.login_message_category = "info"
+login_manager.session_protection = "strong"
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    return LoginService().load_user(user_id)
 
 
 def load_project_env() -> None:
@@ -35,6 +47,8 @@ def create_app() -> Flask:
     load_project_env()
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-only-change-me")
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     try:
         get_tidb_config()
         app.config["DATABASE_CONFIGURED"] = True
@@ -51,6 +65,7 @@ def create_app() -> Flask:
 
     # Required for React to communicate across ports
     CORS(app)
+    login_manager.init_app(app)
 
     # Must match the blueprint variable name in routes.py
     from app.routes import main

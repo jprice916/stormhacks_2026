@@ -1,27 +1,36 @@
 """HTTP routes for the starter app."""
 
 import os
+import re
 from flask import (
     Blueprint,
     current_app,
     jsonify,
+    flash,
     render_template,
+    redirect,
     request,
     send_from_directory,
+    url_for,
 )
+from flask_login import current_user, login_required, login_user, logout_user
 from pymysql.err import MySQLError
 from werkzeug.utils import secure_filename
 
 from app.database import get_connection
 from app.models.journal_entry import JournalEntry
 from app.services.db_service import DatabaseService
+# from app.services.email_service import EmailConfigurationError, EmailService
 from app.services.gemini_service import GeminiService
+from app.services.login_service import LoginService
 from app.services.stt_service import STTService
 
 main = Blueprint("main", __name__)
 
 gemini_service = GeminiService()
 db_service = DatabaseService()
+login_service = LoginService()
+# email_service = EmailService()
 
 # Configure local directory for storing audio/video uploads
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
@@ -29,11 +38,91 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 @main.get("/")
+@login_required
 def index():
     return render_template("index.html")
 
 
+@main.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("main.index"))
+
+    if request.method == "POST":
+        user = login_service.authenticate(
+            request.form.get("identity", ""),
+            request.form.get("password", ""),
+        )
+        if user:
+            login_user(user, remember=request.form.get("remember") == "on")
+            next_url = request.args.get("next", "")
+            if (
+                next_url.startswith("/")
+                and not next_url.startswith("//")
+                and "\\" not in next_url
+            ):
+                return redirect(next_url)
+            return redirect(url_for("main.index"))
+        flash("Username/email or password is incorrect.", "error")
+
+    return render_template("login.html")
+
+
+@main.route("/signup", methods=["GET", "POST"])
+def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for("main.index"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        confirmation = request.form.get("confirm_password", "")
+
+        if not 3 <= len(username) <= 80:
+            flash("Username must be between 3 and 80 characters.", "error")
+        elif len(email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            flash("Enter a valid email address.", "error")
+        elif not 8 <= len(password) <= 128:
+            flash("Password must be between 8 and 128 characters.", "error")
+        elif password != confirmation:
+            flash("The passwords do not match.", "error")
+        else:
+            user = login_service.register_user(username, email, password)
+            if user is None:
+                flash("That username or email is already registered.", "error")
+            else:
+                login_user(user)
+                return redirect(url_for("main.index"))
+
+    return render_template("signup.html")
+
+
+@main.get("/verify-email/<token>")
+def verify_email(token):
+    user = login_service.verify_registration_token(
+        token,
+        current_app.config["SECRET_KEY"],
+    )
+    if user is None:
+        flash("This verification link is invalid, expired, or already used.", "error")
+        return redirect(url_for("main.login"))
+
+    login_user(user)
+    flash("Your email is verified and your account is ready.", "info")
+    return redirect(url_for("main.index"))
+
+
+@main.post("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("You have been signed out.", "info")
+    return redirect(url_for("main.login"))
+
+
 @main.get("/database")
+@login_required
 def database_page():
     if not current_app.config.get("DATABASE_CONFIGURED"):
         return render_template("database.html", logs=None, db_status="not_configured"), 503
@@ -51,6 +140,13 @@ def database_page():
                        LIMIT 200"""
                 )
                 logs = cursor.fetchall()
+                cursor.execute(
+                    """SELECT id, username, email, created_at
+                       FROM users
+                       ORDER BY created_at DESC, id DESC
+                       LIMIT 200"""
+                )
+                users = cursor.fetchall()
         finally:
             connection.close()
     except MySQLError as error:
@@ -66,11 +162,11 @@ def database_page():
             1146: "tables_missing",
             2026: "tls_failed",
         }.get(error_code, "unavailable")
-        return render_template("database.html", logs=None, db_status=db_status), 503
+        return render_template("database.html", logs=None, users=None, db_status=db_status), 503
     except (KeyError, ValueError):
-        return render_template("database.html", logs=None, db_status="unavailable"), 503
+        return render_template("database.html", logs=None, users=None, db_status="unavailable"), 503
 
-    return render_template("database.html", logs=logs, db_status="ok")
+    return render_template("database.html", logs=logs, users=users, db_status="ok")
 
 
 @main.get("/health")
@@ -97,9 +193,10 @@ def database_health():
 
 @main.post("/api/recordings")
 @main.post("/api/process-log")
+@login_required
 def create_recording():
     """Accepts recording uploads or text transcripts, processes with Gemini, and saves to TiDB."""
-    user_id = request.form.get("user_id", "demo_user")
+    user_id = current_user.get_id()
     transcript = request.form.get("transcript")
 
     # Accept either teammate's "recording" or "audio" form field
@@ -155,6 +252,7 @@ def create_recording():
 
 
 @main.get("/uploads/<filename>")
+@login_required
 def serve_upload(filename):
     """Allows React to stream or play back previously recorded video/audio files."""
     return send_from_directory(UPLOAD_FOLDER, filename)
