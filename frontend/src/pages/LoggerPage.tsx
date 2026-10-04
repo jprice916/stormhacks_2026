@@ -49,8 +49,8 @@ declare global {
   }
 }
 
-function formatTime(milliseconds: number) {
-  const seconds = Math.ceil(Math.max(0, milliseconds) / 1000);
+function formatDuration(milliseconds: number) {
+  const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
@@ -80,7 +80,9 @@ export function LoggerPage() {
   const fullTranscriptRef = useRef('');
   const interimTranscriptRef = useRef('');
   const isRecordingRef = useRef(false);
-  const startedAtRef = useRef(0);
+  const isPausedRef = useRef(false);
+  const activeSegmentStartedAtRef = useRef(0);
+  const elapsedMsRef = useRef(0);
   const durationRef = useRef(0);
   const recordedAtRef = useRef('');
   const lastCheckpointLengthRef = useRef(0);
@@ -96,12 +98,13 @@ export function LoggerPage() {
 
   const [cameraState, setCameraState] = useState<'loading' | 'ready' | 'error' | 'unsupported'>('loading');
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [playbackUrl, setPlaybackUrl] = useState('');
   const [status, setStatus] = useState('Requesting camera and microphone access…');
-  const [timeLeft, setTimeLeft] = useState(formatTime(MAX_RECORDING_MS));
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [reflection, setReflection] = useState<string | null>(null);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
 
@@ -110,6 +113,11 @@ export function LoggerPage() {
       if (timer.current !== null) window.clearInterval(timer.current);
       timer.current = null;
     });
+  }, []);
+
+  const updateElapsedTime = useCallback(() => {
+    const elapsed = elapsedMsRef.current + (isPausedRef.current ? 0 : Date.now() - activeSegmentStartedAtRef.current);
+    setElapsedMs(Math.min(elapsed, MAX_RECORDING_MS));
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -142,7 +150,7 @@ export function LoggerPage() {
   }, []);
 
   const requestReflection = useCallback(async (trigger: string) => {
-    if (!isRecordingRef.current || promptCountRef.current >= 4 || rateLimitedRef.current) return;
+    if (!isRecordingRef.current || isPausedRef.current || promptCountRef.current >= 4 || rateLimitedRef.current) return;
     const remainingCooldown = nextRequestAtRef.current - Date.now();
     if (remainingCooldown > 0) {
       return;
@@ -184,8 +192,12 @@ export function LoggerPage() {
 
   const stopRecording = useCallback(() => {
     if (!isRecordingRef.current) return;
+    if (!isPausedRef.current) elapsedMsRef.current += Date.now() - activeSegmentStartedAtRef.current;
     isRecordingRef.current = false;
+    isPausedRef.current = false;
     setIsRecording(false);
+    setIsPaused(false);
+    setElapsedMs(Math.min(elapsedMsRef.current, MAX_RECORDING_MS));
     if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
     if (checkpointIntervalRef.current !== null) window.clearInterval(checkpointIntervalRef.current);
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
@@ -194,7 +206,7 @@ export function LoggerPage() {
     try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
     recognitionRef.current = null;
     if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
-    durationRef.current = Math.round((Date.now() - startedAtRef.current) / 1000);
+    durationRef.current = Math.round(elapsedMsRef.current / 1000);
     recordedAtRef.current = localTimestamp();
   }, []);
 
@@ -223,7 +235,7 @@ export function LoggerPage() {
       if (event.error !== 'no-speech') setStatus(`Live transcription error: ${event.error}`);
     };
     recognition.onend = () => {
-      if (isRecordingRef.current) {
+      if (isRecordingRef.current && !isPausedRef.current) {
         try { recognition.start(); } catch { /* restart is already pending */ }
       }
     };
@@ -231,10 +243,43 @@ export function LoggerPage() {
     try { recognition.start(); } catch { /* browser may already be starting recognition */ }
   }, []);
 
+  const pauseOrResumeRecording = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!isRecordingRef.current || !recorder) return;
+
+    if (!isPausedRef.current) {
+      elapsedMsRef.current += Date.now() - activeSegmentStartedAtRef.current;
+      isPausedRef.current = true;
+      setIsPaused(true);
+      setElapsedMs(elapsedMsRef.current);
+      if (timerRef.current !== null) window.clearInterval(timerRef.current);
+      if (maxTimerRef.current !== null) window.clearTimeout(maxTimerRef.current);
+      if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+      if (checkpointIntervalRef.current !== null) window.clearInterval(checkpointIntervalRef.current);
+      try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
+      recognitionRef.current = null;
+      if (recorder.state === 'recording') recorder.pause();
+      setStatus('Recording paused. Select Resume when you are ready.');
+      return;
+    }
+
+    isPausedRef.current = false;
+    setIsPaused(false);
+    activeSegmentStartedAtRef.current = Date.now();
+    if (recorder.state === 'paused') recorder.resume();
+    startSpeechRecognition();
+    timerRef.current = window.setInterval(updateElapsedTime, 250);
+    maxTimerRef.current = window.setTimeout(stopRecording, Math.max(0, MAX_RECORDING_MS - elapsedMsRef.current));
+    checkpointIntervalRef.current = window.setInterval(() => requestReflectionRef.current('20-second interval'), 20_000);
+    setStatus('Recording video and listening to your voice. Select Stop recording when finished.');
+  }, [startSpeechRecognition, stopRecording, updateElapsedTime]);
+
   const startRecording = useCallback(() => {
     if (!streamRef.current) return;
     isRecordingRef.current = true;
+    isPausedRef.current = false;
     setIsRecording(true);
+    setIsPaused(false);
     setIsComplete(false);
     setIsSaved(false);
     setReflection(null);
@@ -266,15 +311,16 @@ export function LoggerPage() {
     recorder.start(500);
     startSpeechRecognition();
 
-    startedAtRef.current = Date.now();
-    setTimeLeft(formatTime(MAX_RECORDING_MS));
-    timerRef.current = window.setInterval(() => setTimeLeft(formatTime(MAX_RECORDING_MS - (Date.now() - startedAtRef.current))), 250);
+    elapsedMsRef.current = 0;
+    activeSegmentStartedAtRef.current = Date.now();
+    setElapsedMs(0);
+    timerRef.current = window.setInterval(updateElapsedTime, 250);
     maxTimerRef.current = window.setTimeout(stopRecording, MAX_RECORDING_MS);
     checkpointIntervalRef.current = window.setInterval(() => {
       requestReflectionRef.current('20-second interval');
     }, 20_000);
     setStatus('Recording video and listening to your voice. Select Stop recording when finished.');
-  }, [startSpeechRecognition, stopRecording]);
+  }, [startSpeechRecognition, stopRecording, updateElapsedTime]);
 
   const resetForRetry = useCallback(() => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -348,9 +394,8 @@ export function LoggerPage() {
           <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href="/my-videos">My videos</a>
         </header>
 
-        <section className="mt-10 border-2 border-[#473c21] bg-[#f9f6f1] p-5 shadow-[7px_7px_0_#b39e6c] sm:p-8" aria-labelledby="recorder-title">
+        <section className="relative mt-10 border-2 border-[#473c21] bg-[#f9f6f1] p-5 shadow-[7px_7px_0_#b39e6c] sm:p-8" aria-labelledby="recorder-title">
           <p className="text-xs font-medium uppercase tracking-[0.17em] text-[#887445]">Voice journal</p>
-          <h1 className="mt-3 font-serif text-4xl sm:text-5xl" id="recorder-title">Recording studio</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#887445]">Your camera preview starts automatically. Record a moment you want to remember.</p>
 
           <div className="relative mt-7 aspect-video overflow-hidden border-2 border-[#473c21] bg-stone-900">
@@ -359,7 +404,7 @@ export function LoggerPage() {
             {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
             {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
             {reflection && (
-              <aside className="absolute bottom-4 right-4 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
+              <aside className="absolute bottom-11 right-4 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
                 <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
                 <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
                 <button className="mt-3 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21]" onClick={() => setReflection(null)} type="button">Keep talking</button>
@@ -380,9 +425,21 @@ export function LoggerPage() {
           )}
 
           {!isComplete ? (
-            <div className="mt-6 flex items-center justify-center gap-4">
+            <div className="relative mt-6 flex h-16 items-center justify-center">
+              {isRecording ? (
+                <button
+                  aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+                  className="absolute right-[calc(50%+3.5rem)] grid h-12 w-12 place-items-center rounded-full border-2 border-[#998350] bg-[#eeebe4] text-[#473c21] transition-colors hover:bg-[#ddd5c3]"
+                  onClick={pauseOrResumeRecording}
+                  type="button"
+                >
+                  <span aria-hidden="true" className={isPaused ? 'ml-0.5 h-0 w-0 border-y-[7px] border-l-[11px] border-y-transparent border-l-current' : 'flex gap-1'}>
+                    {!isPaused && <><span className="h-4 w-1.5 bg-current" /><span className="h-4 w-1.5 bg-current" /></>}
+                  </span>
+                </button>
+              ) : null}
               <button
-                aria-label={recordLabel}
+                aria-label={isRecording ? 'Stop recording' : recordLabel}
                 className={`grid h-16 w-16 place-items-center rounded-full border-2 border-[#473c21] text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50 ${isRecording ? 'bg-red-700' : 'bg-[#473c21]'}`}
                 disabled={!canRecord}
                 onClick={() => { if (!streamRef.current) void startCamera(); else if (isRecordingRef.current) stopRecording(); else startRecording(); }}
@@ -390,18 +447,19 @@ export function LoggerPage() {
               >
                 <span aria-hidden="true" className={isRecording ? 'h-4 w-4 bg-[#f9f6f1]' : 'h-5 w-5 rounded-full bg-red-500 ring-2 ring-[#f9f6f1]'} />
               </button>
-              <div className="min-w-20 text-left">
-                <p className="text-[0.65rem] font-medium uppercase tracking-[0.13em] text-[#887445]">{isRecording ? 'Time left' : 'Ready'}</p>
-                <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{timeLeft}</time>
+              <div className="absolute left-[calc(50%+3.5rem)] min-w-28 text-left">
+                <p className="text-[0.65rem] font-medium uppercase tracking-[0.13em] text-[#887445]">{isPaused ? 'Paused' : isRecording ? 'Recording' : 'Maximum length'}</p>
+                <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{formatDuration(elapsedMs)} / {formatDuration(MAX_RECORDING_MS)}</time>
               </div>
             </div>
           ) : (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button className="min-h-12 border-2 border-[#998350] px-6 py-3 text-sm font-medium hover:bg-[#eeebe4]" disabled={isSaving} onClick={resetForRetry} type="button">Retry</button>
               <button className="min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSaving || isSaved} onClick={() => void uploadRecording()} type="button">{isSaving ? 'Saving…' : isSaved ? 'Saved' : 'Complete'}</button>
-              <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{timeLeft}</time>
+              <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{formatDuration(elapsedMs)} / {formatDuration(MAX_RECORDING_MS)}</time>
             </div>
           )}
+          <p className="absolute bottom-3 right-4 text-xs text-[#887445] sm:bottom-4 sm:right-6">Or enter a journal in text</p>
         </section>
       </div>
     </main>
