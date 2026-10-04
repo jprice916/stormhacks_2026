@@ -4,13 +4,20 @@ A Flask web app with a webcam and microphone recording test page.
 
 ## Requirements
 
-- Python 3.10+
-- pip
+- Python 3.10+ and pip for the Flask backend
+- Node.js 20.19+ or 22.12+ and npm for the React frontend
+
+The dependency manifests are split by ecosystem:
+
+- `requirements.txt` lists Python packages for Flask.
+- `frontend/package.json` lists frontend packages, and `frontend/package-lock.json` pins their resolved versions.
 
 ## Run locally
 
+Start Flask in Terminal 1 from the repository root:
+
 ```powershell
-py -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python run.py
@@ -56,9 +63,14 @@ app/
   models.py         User and audio/AV log database models
   routes.py         Page and health routes
   templates/        Jinja HTML templates
-  static/           CSS and JavaScript
-run.py              Local development entry point
+  static/           Built frontend and static assets
+frontend/
+  package.json      Frontend dependencies and scripts
+  package-lock.json Locked frontend dependency versions
 requirements.txt    Python dependencies
+run.py              Local development entry point
 ```
 
-The health check is available at `/health`. Add application routes in `app/routes.py` and page templates under `app/templates/`.
+The health check is available at `/health`. Add Flask routes in `app/routes.py`.
+
+On macOS or Linux, use `python3 -m venv .venv` and `source .venv/bin/activate` in place of the Windows virtual-environment commands. The remaining Python and npm commands are the same.

@@ -1,5 +1,8 @@
 """HTTP routes for the starter app."""
 
+from pathlib import Path
+
+from flask import Blueprint, current_app, jsonify, render_template, send_from_directory
 import os
 import threading
 import time
@@ -55,7 +58,12 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @main.get("/")
 @login_required
+@main.get("/weekly")
+@main.get("/profile")
 def index():
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
     return redirect(url_for("main.logger"))
 
 
