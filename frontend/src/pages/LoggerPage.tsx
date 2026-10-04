@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { HamsterLoader } from '../components/HamsterLoader';
 
 const MAX_RECORDING_MS = 5 * 60 * 1000;
 const LIVE_COOLDOWN_SECONDS = 15;
@@ -98,6 +99,7 @@ export function LoggerPage() {
   const pauseTimerRef = useRef<number | null>(null);
   const checkpointIntervalRef = useRef<number | null>(null);
   const reflectionTimerRef = useRef<number | null>(null);
+  const submitTransitionTimerRef = useRef<number | null>(null);
   const requestReflectionRef = useRef<(trigger: string) => void>(() => undefined);
 
   const [cameraState, setCameraState] = useState<'loading' | 'ready' | 'error' | 'unsupported'>('loading');
@@ -106,6 +108,7 @@ export function LoggerPage() {
   const [isComplete, setIsComplete] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [submissionPhase, setSubmissionPhase] = useState<'idle' | 'saving' | 'thank-you'>('idle');
   const [playbackUrl, setPlaybackUrl] = useState('');
   const [journalMode, setJournalMode] = useState<'voice' | 'text'>('voice');
   const [textJournal, setTextJournal] = useState('');
@@ -374,7 +377,9 @@ export function LoggerPage() {
 
   const uploadRecording = useCallback(async () => {
     if (!blobRef.current) return;
+    const startedAt = Date.now();
     setIsSaving(true);
+    setSubmissionPhase('saving');
     const transcript = `${fullTranscriptRef.current} ${interimTranscriptRef.current}`.replace(/\s+/g, ' ').trim();
     const formData = new FormData();
     formData.append('recording', blobRef.current, `entry_${Date.now()}.webm`);
@@ -402,10 +407,18 @@ export function LoggerPage() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not save the recording.');
       setIsSaving(false);
+      setSubmissionPhase('idle');
       return;
+    }
+    const minimumLoaderTime = 900;
+    const remainingLoaderTime = minimumLoaderTime - (Date.now() - startedAt);
+    if (remainingLoaderTime > 0) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, remainingLoaderTime));
     }
     setIsSaving(false);
     setIsSaved(true);
+    setSubmissionPhase('thank-you');
+    submitTransitionTimerRef.current = window.setTimeout(() => window.location.assign('/'), 1_800);
   }, []);
 
   const dismissRevisit = useCallback(async () => {
@@ -449,6 +462,7 @@ export function LoggerPage() {
     return () => {
       clearRecordingTimers();
       if (reflectionTimerRef.current !== null) window.clearInterval(reflectionTimerRef.current);
+      if (submitTransitionTimerRef.current !== null) window.clearTimeout(submitTransitionTimerRef.current);
       try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -561,6 +575,29 @@ export function LoggerPage() {
           </button>
         </section>
       </div>
+
+      {submissionPhase !== 'idle' && (
+        <div
+          aria-busy={submissionPhase === 'saving'}
+          aria-live="assertive"
+          aria-modal="true"
+          className={`fixed inset-0 z-50 grid place-items-center p-6 transition-colors duration-1000 ${submissionPhase === 'thank-you' ? 'bg-white' : 'bg-[#f9f6f1]'}`}
+          role="dialog"
+        >
+          <div className="relative grid min-h-72 min-w-72 place-items-center">
+            <div className={`flex flex-col items-center gap-6 text-center transition-all duration-700 ${submissionPhase === 'saving' ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'}`}>
+              <HamsterLoader />
+              <p className="font-serif text-xl italic text-[#473c21]">Saving your entry…</p>
+            </div>
+            <div className={`absolute inset-0 grid place-items-center text-center transition-all duration-1000 ${submissionPhase === 'thank-you' ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+              <div>
+                <p className="font-serif text-4xl italic text-[#473c21] sm:text-5xl">Thank you.</p>
+                <p className="mt-4 text-sm text-[#887445]">Your reflection has been saved.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
