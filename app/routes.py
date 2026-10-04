@@ -566,6 +566,27 @@ def process_log():
     ), 200
 
 
+@main.get("/api/recordings")
+@login_required
+def list_recordings():
+    """Return the signed-in user's TiDB-backed recordings for the React debug page."""
+    try:
+        videos = get_video_logs_for_user(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not list recordings from TiDB")
+        return jsonify(message="Could not load recordings from TiDB."), 503
+
+    return jsonify(videos=[
+        {
+            "id": video["id"],
+            "filename": video["title"] or "Recorded video",
+            "recorded_at": video["log_date"].isoformat(),
+            "recording_url": video["storage_path"],
+        }
+        for video in videos
+    ])
+
+
 @main.post("/api/recordings")
 @login_required
 def save_recording():
