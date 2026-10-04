@@ -77,6 +77,23 @@ def initialize_database() -> None:
             CONSTRAINT fk_audio_visual_logs_user FOREIGN KEY (user_id)
                 REFERENCES users (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS recording_media (
+            log_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+            mime_type VARCHAR(100) NOT NULL,
+            original_filename VARCHAR(255) NOT NULL,
+            file_size_bytes BIGINT UNSIGNED NOT NULL,
+            chunk_count INT UNSIGNED NOT NULL,
+            CONSTRAINT fk_recording_media_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS recording_chunks (
+            log_id BIGINT UNSIGNED NOT NULL,
+            chunk_index INT UNSIGNED NOT NULL,
+            chunk_data MEDIUMBLOB NOT NULL,
+            PRIMARY KEY (log_id, chunk_index),
+            CONSTRAINT fk_recording_chunks_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     )
     connection = get_connection()
     try:
