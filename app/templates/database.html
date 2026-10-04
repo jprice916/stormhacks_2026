@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}TiDB Media Log{% endblock %}
+{% block body_class %}database-page{% endblock %}
+
+{% block content %}
+<div class="database-header">
+    <div>
+        <span class="eyebrow">TiDB Cloud</span>
+        <h1>Media log</h1>
+        <p class="intro">Recent audio and video records stored in your database.</p>
+    </div>
+    <a class="refresh-link" href="{{ url_for('main.database_page') }}" aria-label="Refresh media log"
+        title="Refresh">&#8635;</a>
+</div>
+
+{% if db_status == "not_configured" %}
+<p class="notice" role="status">TiDB Cloud is not configured. Set DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, and
+    DB_DATABASE in your .env file.</p>
+{% elif db_status == "endpoint_unreachable" %}
+<p class="notice notice-error" role="alert">Could not resolve or reach the TiDB endpoint. Check DB_HOST and DB_PORT.
+    Private-link
+    endpoints require access to their VPC; use your cluster's Public Endpoint and allow-list this machine's IP if
+    connecting from outside that network.</p>
+{% elif db_status == "authentication_failed" %}
+<p class="notice notice-error" role="alert">TiDB rejected the login. Check DB_USERNAME and DB_PASSWORD.</p>
+{% elif db_status == "database_not_found" %}
+<p class="notice notice-error" role="alert">The DB_DATABASE value was not found. Copy the database name from your TiDB
+    Cloud connection settings.</p>
+{% elif db_status == "database_access_denied" %}
+<p class="notice notice-error" role="alert">This TiDB user cannot access the selected database. Check the database name
+    and user permissions.</p>
+{% elif db_status == "tls_failed" %}
+<p class="notice notice-error" role="alert">TLS verification failed. Check TIDB_CA_PATH and use the CA certificate from
+    your TiDB Cloud cluster.</p>
+{% elif db_status == "tables_missing" %}
+<p class="notice notice-error" role="alert">The database connection works, but the app tables are missing. Run
+    <code>flask --app run.py init-db</code> from the project folder, then refresh this page.</p>
+{% elif db_status == "unavailable" %}
+<p class="notice notice-error" role="alert">Could not read from TiDB Cloud. Check the connection settings and try again.
+</p>
+{% elif logs %}
+<div class="table-frame">
+    <table>
+        <thead>
+            <tr>
+                <th scope="col">Title</th>
+                <th scope="col">Type</th>
+                <th scope="col">Date</th>
+                <th scope="col">User</th>
+                <th scope="col">Notes</th>
+                <th scope="col">Storage path</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.title or "Untitled" }}</td>
+                <td><span class="media-type">{{ log.media_type|replace("_", " ") }}</span></td>
+                <td class="date-cell">{{ log.log_date.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td>{{ log.username }}</td>
+                <td class="notes-cell">{{ log.notes or "—" }}</td>
+                <td class="path-cell">{{ log.storage_path }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<p class="record-count">Showing {{ logs|length }} recent record{{ "s" if logs|length != 1 else "" }}</p>
+{% else %}
+<p class="notice" role="status">No media records yet.</p>
+{% endif %}
+{% endblock %}
