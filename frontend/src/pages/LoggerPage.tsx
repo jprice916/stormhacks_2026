@@ -92,7 +92,6 @@ export function LoggerPage() {
   const maxTimerRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
   const checkpointIntervalRef = useRef<number | null>(null);
-  const cooldownIntervalRef = useRef<number | null>(null);
   const requestReflectionRef = useRef<(trigger: string) => void>(() => undefined);
 
   const [cameraState, setCameraState] = useState<'loading' | 'ready' | 'error' | 'unsupported'>('loading');
@@ -105,15 +104,9 @@ export function LoggerPage() {
   const [timeLeft, setTimeLeft] = useState(formatTime(MAX_RECORDING_MS));
   const [reflection, setReflection] = useState<string | null>(null);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
-  const [debugQuestion, setDebugQuestion] = useState('Waiting for a prompt.');
-  const [debugGemini, setDebugGemini] = useState('Waiting to send a checkpoint.');
-  const [debugRequest, setDebugRequest] = useState('Waiting for a pause with enough finalized speech.');
-  const [debugResponse, setDebugResponse] = useState('No response yet.');
-  const [reflectionCheck, setReflectionCheck] = useState('Starts when recording begins.');
-  const [cooldown, setCooldown] = useState('Ready when you pause after 10 finalized words.');
 
   const clearRecordingTimers = useCallback(() => {
-    [timerRef, maxTimerRef, pauseTimerRef, checkpointIntervalRef, cooldownIntervalRef].forEach((timer) => {
+    [timerRef, maxTimerRef, pauseTimerRef, checkpointIntervalRef].forEach((timer) => {
       if (timer.current !== null) window.clearInterval(timer.current);
       timer.current = null;
     });
@@ -146,38 +139,23 @@ export function LoggerPage() {
 
   const startCooldown = useCallback((seconds: number) => {
     nextRequestAtRef.current = Date.now() + seconds * 1000;
-    if (cooldownIntervalRef.current !== null) window.clearInterval(cooldownIntervalRef.current);
-    const update = () => {
-      const remaining = Math.max(0, Math.ceil((nextRequestAtRef.current - Date.now()) / 1000));
-      setCooldown(remaining > 0 ? `Cooldown: ${remaining}s before the next reflection request.` : 'Ready for the next 3-second pause.');
-      if (remaining === 0 && cooldownIntervalRef.current !== null) {
-        window.clearInterval(cooldownIntervalRef.current);
-        cooldownIntervalRef.current = null;
-      }
-    };
-    update();
-    cooldownIntervalRef.current = window.setInterval(update, 250);
   }, []);
 
   const requestReflection = useCallback(async (trigger: string) => {
     if (!isRecordingRef.current || promptCountRef.current >= 4 || rateLimitedRef.current) return;
     const remainingCooldown = nextRequestAtRef.current - Date.now();
     if (remainingCooldown > 0) {
-      setDebugGemini('Check skipped: waiting for the API cooldown.');
       return;
     }
 
     const words = fullTranscriptRef.current.trim().split(/\s+/).filter(Boolean);
     const checkpointWords = words.slice(lastCheckpointLengthRef.current);
     if (checkpointWords.length < MIN_CHECKPOINT_WORDS) {
-      setDebugGemini(`Check skipped: ${checkpointWords.length}/10 new finalized words since the last request.`);
       return;
     }
 
     lastCheckpointLengthRef.current = words.length;
     const payload = { recording_id: recordingIdRef.current, trigger, checkpoint: checkpointWords.join(' ') };
-    setDebugRequest(JSON.stringify(payload, null, 2));
-    setDebugGemini('Sending checkpoint to Gemini.');
     startCooldown(LIVE_COOLDOWN_SECONDS);
 
     try {
@@ -187,28 +165,18 @@ export function LoggerPage() {
         body: JSON.stringify(payload),
       });
       const result = await readResponse<LiveResponse>(response);
-      setDebugResponse(JSON.stringify({ status: response.status, body: result }, null, 2));
       if (result.cooldown_seconds) startCooldown(result.cooldown_seconds);
       if (result.retry_after_seconds) startCooldown(result.retry_after_seconds);
       if (result.rate_limited) {
         rateLimitedRef.current = true;
-        setDebugGemini('Gemini rate limit hit: live requests are paused for this recording.');
       } else if (result.error) {
-        setDebugGemini(result.details ? `Gemini error: ${result.details}` : 'Gemini returned an error.');
-        setDebugQuestion(result.error);
+        setStatus(result.error);
       } else if (result.should_prompt && result.question) {
         promptCountRef.current += 1;
         setReflection(result.question);
-        setDebugQuestion(result.question);
-        setDebugGemini('Gemini returned a reflection question.');
-      } else {
-        setDebugQuestion('No question returned for this checkpoint.');
-        setDebugGemini('Gemini evaluated this checkpoint and chose not to prompt.');
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setDebugResponse(JSON.stringify({ error: message }, null, 2));
-      setDebugGemini('Could not reach the Flask server.');
+      setStatus(error instanceof Error ? `Could not reach the reflection service: ${error.message}` : 'Could not reach the reflection service.');
     }
   }, [startCooldown]);
 
@@ -233,8 +201,7 @@ export function LoggerPage() {
   const startSpeechRecognition = useCallback(() => {
     const Constructor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Constructor) {
-      setDebugQuestion('Live browser transcription is unavailable; the recording will be transcribed after it ends.');
-      setDebugRequest('This browser does not provide the Web Speech API.');
+      setStatus('Live browser transcription is unavailable; the recording will be transcribed after it ends.');
       return;
     }
     const recognition = new Constructor();
@@ -249,21 +216,11 @@ export function LoggerPage() {
         else interimTranscriptRef.current += event.results[index][0].transcript;
       }
       const transcript = `${fullTranscriptRef.current} ${interimTranscriptRef.current}`.trim();
-      const finalizedWords = fullTranscriptRef.current.trim().split(/\s+/).filter(Boolean).length;
       setStatus(transcript ? `Live transcript: “${transcript}”` : 'Listening…');
-      setDebugRequest(JSON.stringify({
-        state: finalizedWords >= MIN_CHECKPOINT_WORDS ? 'Waiting for a 3-second pause' : 'Listening for more finalized speech',
-        finalized_words: finalizedWords,
-        interim_words: interimTranscriptRef.current.trim().split(/\s+/).filter(Boolean).length,
-        words_needed_for_first_check: Math.max(0, MIN_CHECKPOINT_WORDS - finalizedWords),
-        live_transcript: transcript,
-      }, null, 2));
-      if (finalizedWords < MIN_CHECKPOINT_WORDS) setDebugQuestion(`Listening: ${finalizedWords}/10 finalized words before the first reflection check.`);
-      setReflectionCheck('Pause check in 3s.');
       pauseTimerRef.current = window.setTimeout(() => requestReflectionRef.current('3-second pause'), 3000);
     };
     recognition.onerror = (event) => {
-      if (event.error !== 'no-speech') setDebugGemini(`Speech recognition error: ${event.error}`);
+      if (event.error !== 'no-speech') setStatus(`Live transcription error: ${event.error}`);
     };
     recognition.onend = () => {
       if (isRecordingRef.current) {
@@ -289,11 +246,6 @@ export function LoggerPage() {
     promptCountRef.current = 0;
     rateLimitedRef.current = false;
     recordingIdRef.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setDebugQuestion('Waiting for a prompt.');
-    setDebugGemini('Waiting to send a checkpoint.');
-    setDebugRequest('Waiting for a pause with enough finalized speech.');
-    setDebugResponse('No response yet.');
-    setCooldown('Ready when you pause after 10 finalized words. Requests are spaced 15 seconds apart.');
 
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     const mimeTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -316,11 +268,9 @@ export function LoggerPage() {
 
     startedAtRef.current = Date.now();
     setTimeLeft(formatTime(MAX_RECORDING_MS));
-    setReflectionCheck('Automatic check in 20s.');
     timerRef.current = window.setInterval(() => setTimeLeft(formatTime(MAX_RECORDING_MS - (Date.now() - startedAtRef.current))), 250);
     maxTimerRef.current = window.setTimeout(stopRecording, MAX_RECORDING_MS);
     checkpointIntervalRef.current = window.setInterval(() => {
-      setReflectionCheck('Automatic check now.');
       requestReflectionRef.current('20-second interval');
     }, 20_000);
     setStatus('Recording video and listening to your voice. Select Stop recording when finished.');
@@ -408,17 +358,16 @@ export function LoggerPage() {
             {isComplete && <video className="h-full w-full bg-stone-900 object-contain" controls playsInline ref={recordedVideoRef} src={playbackUrl || undefined} />}
             {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
             {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
+            {reflection && (
+              <aside className="absolute bottom-4 right-4 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
+                <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
+                <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
+                <button className="mt-3 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21]" onClick={() => setReflection(null)} type="button">Keep talking</button>
+              </aside>
+            )}
           </div>
 
           <p className="mt-4 min-h-6 text-sm leading-6 text-[#887445]" role="status">{status}</p>
-
-          {reflection && (
-            <aside className="mt-5 border-2 border-[#bca880] bg-[#eeebe4] p-4" aria-live="polite">
-              <p className="text-xs font-medium uppercase tracking-[0.15em] text-[#887445]">Thought to explore</p>
-              <p className="mt-2 font-serif text-lg italic">{reflection}</p>
-              <button className="mt-3 text-sm text-[#887445] underline underline-offset-4" onClick={() => setReflection(null)} type="button">Keep talking</button>
-            </aside>
-          )}
 
           {revisit?.suggestion && (
             <aside className="mt-5 border-2 border-[#998350] bg-[#eeebe4] p-4" aria-live="polite">
@@ -430,41 +379,31 @@ export function LoggerPage() {
             </aside>
           )}
 
-          <section className="mt-6 border border-[#bca880] bg-[#eeebe4] p-4 text-sm" aria-labelledby="live-debug-title">
-            <h2 className="font-serif text-lg" id="live-debug-title">Live reflection debug</h2>
-            <p className="mt-3"><strong>Question:</strong> {debugQuestion}</p>
-            <p className="mt-2"><strong>Gemini status:</strong> {debugGemini}</p>
-            <p className="mt-2"><strong>Next reflection check:</strong> {reflectionCheck}</p>
-            <p className="mt-2"><strong>API cooldown:</strong> {cooldown}</p>
-            <p className="mt-4 font-medium">Outgoing checkpoint</p>
-            <pre className="mt-2 max-h-44 overflow-auto bg-[#473c21] p-3 text-xs leading-5 text-[#f9f6f1] whitespace-pre-wrap">{debugRequest}</pre>
-            <p className="mt-4 font-medium">Incoming response</p>
-            <pre className="mt-2 max-h-44 overflow-auto bg-[#473c21] p-3 text-xs leading-5 text-[#f9f6f1] whitespace-pre-wrap">{debugResponse}</pre>
-          </section>
-
           {!isComplete ? (
-            <button
-              className="mt-6 min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canRecord}
-              onClick={() => { if (!streamRef.current) void startCamera(); else if (isRecordingRef.current) stopRecording(); else startRecording(); }}
-              type="button"
-            >
-              {recordLabel}
-            </button>
+            <div className="mt-6 flex items-center justify-center gap-4">
+              <button
+                aria-label={recordLabel}
+                className={`grid h-16 w-16 place-items-center rounded-full border-2 border-[#473c21] text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50 ${isRecording ? 'bg-red-700' : 'bg-[#473c21]'}`}
+                disabled={!canRecord}
+                onClick={() => { if (!streamRef.current) void startCamera(); else if (isRecordingRef.current) stopRecording(); else startRecording(); }}
+                type="button"
+              >
+                <span aria-hidden="true" className={isRecording ? 'h-4 w-4 bg-[#f9f6f1]' : 'h-5 w-5 rounded-full bg-red-500 ring-2 ring-[#f9f6f1]'} />
+              </button>
+              <div className="min-w-20 text-left">
+                <p className="text-[0.65rem] font-medium uppercase tracking-[0.13em] text-[#887445]">{isRecording ? 'Time left' : 'Ready'}</p>
+                <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{timeLeft}</time>
+              </div>
+            </div>
           ) : (
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button className="min-h-12 border-2 border-[#998350] px-6 py-3 text-sm font-medium hover:bg-[#eeebe4]" disabled={isSaving} onClick={resetForRetry} type="button">Retry</button>
               <button className="min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSaving || isSaved} onClick={() => void uploadRecording()} type="button">{isSaving ? 'Saving…' : isSaved ? 'Saved' : 'Complete'}</button>
+              <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{timeLeft}</time>
             </div>
           )}
         </section>
       </div>
-
-      <footer className="fixed inset-x-0 bottom-0 flex min-h-16 items-center justify-center gap-3 border-t-2 border-[#473c21] bg-[#f9f6f1]/95 px-5 text-sm backdrop-blur">
-        <span className={`h-2.5 w-2.5 rounded-full ${isRecording ? 'bg-red-600 ring-4 ring-red-200' : 'bg-[#bca880]'}`} />
-        <span>{isRecording ? 'Time left' : isComplete ? 'Recording complete' : 'Ready to record'}</span>
-        <time className="font-mono font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{timeLeft}</time>
-      </footer>
     </main>
   );
 }
