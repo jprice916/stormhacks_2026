@@ -22,6 +22,8 @@ class RecorderApp {
     this.recordingUrl = undefined;
     this.startedAt = undefined;
     this.recordedDurationSeconds = 0;
+    this.recordedAtLocal = undefined;
+    this.userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.isRecording = false;
     this.timerInterval = undefined;
     this.recordingTimeout = undefined;
@@ -104,6 +106,7 @@ class RecorderApp {
 
       this.startedAt = Date.now();
       this.recordedDurationSeconds = 0;
+      this.recordedAtLocal = undefined;
       this.timer.textContent = this.formatTime(RecorderApp.maxRecordingDurationMs);
       this.timerLabel.textContent = "Time left";
       this.timerBar.classList.add("is-recording");
@@ -133,6 +136,7 @@ class RecorderApp {
     window.clearTimeout(this.recordingTimeout);
     this.updateTimer();
     this.recordedDurationSeconds = Math.round((Date.now() - this.startedAt) / 1000);
+    this.recordedAtLocal = this.localTimestamp();
   }
 
   finishRecording() {
@@ -189,6 +193,8 @@ class RecorderApp {
     const formData = new FormData();
     formData.append("recording", this.recordingBlob, "webcam-recording.webm");
     formData.append("duration_seconds", String(this.recordedDurationSeconds));
+    formData.append("recorded_at_local", this.recordedAtLocal || this.localTimestamp());
+    formData.append("user_time_zone", this.userTimeZone || "");
 
     try {
       const response = await fetch("/api/recordings", { method: "POST", body: formData });
@@ -217,6 +223,12 @@ class RecorderApp {
   formatTime(milliseconds) {
     const seconds = Math.ceil(milliseconds / 1000);
     return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  localTimestamp() {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   }
 
   stopCamera(showPlaceholder = true) {

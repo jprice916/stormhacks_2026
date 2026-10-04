@@ -50,12 +50,18 @@ def create_database_recording(
     mime_type: str,
     original_filename: str,
     duration_seconds: int | None,
+    recorded_at_local: datetime,
+    user_time_zone: str | None,
     recording_url_factory,
 ) -> tuple[int, datetime]:
-    """Store a recording as TiDB chunks and return its log ID and UTC date."""
-    logged_at = datetime.now(timezone.utc)
-    log_date = logged_at.replace(tzinfo=None)
-    notes = f"Duration: {duration_seconds} seconds" if duration_seconds is not None else None
+    """Store a recording as TiDB chunks with the user's local recording date."""
+    logged_at = recorded_at_local.replace(tzinfo=None)
+    notes_parts = []
+    if duration_seconds is not None:
+        notes_parts.append(f"Duration: {duration_seconds} seconds")
+    if user_time_zone:
+        notes_parts.append(f"Time zone: {user_time_zone}")
+    notes = "; ".join(notes_parts) or None
     connection = get_connection()
     log_id = None
     try:
@@ -64,7 +70,7 @@ def create_database_recording(
                 """INSERT INTO audio_visual_logs
                    (user_id, log_date, media_type, storage_path, title, notes)
                    VALUES (%s, %s, 'audio_video', '', %s, %s)""",
-                (user_id, log_date, original_filename, notes),
+                (user_id, logged_at, original_filename, notes),
             )
             log_id = cursor.lastrowid
             storage_path = recording_url_factory(log_id)

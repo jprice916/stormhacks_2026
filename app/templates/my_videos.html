@@ -17,7 +17,7 @@
           <video controls playsinline preload="metadata" src="{{ video.storage_path }}" aria-label="{{ video.title or 'Recorded video' }}"></video>
           <div class="video-card-details">
             <h2>{{ video.title or "Recorded video" }}</h2>
-            <time datetime="{{ video.log_date.isoformat() }}">{{ video.log_date.strftime("%B %d, %Y at %I:%M %p UTC") }}</time>
+            <time datetime="{{ video.log_date.isoformat() }}">{{ video.log_date.strftime("%B %d, %Y at %I:%M %p") }}</time>
           </div>
         </article>
       {% endfor %}

@@ -293,12 +293,19 @@ def save_recording():
     user_id = int(current_user.get_id())
     try:
         duration_seconds = request.form.get("duration_seconds", type=int)
+        recorded_at_value = request.form.get("recorded_at_local", "")
+        try:
+            recorded_at_local = datetime.fromisoformat(recorded_at_value)
+        except ValueError:
+            recorded_at_local = datetime.now().astimezone().replace(tzinfo=None)
         log_id, logged_at = create_database_recording(
             user_id,
             recording.stream,
             mime_type=recording.mimetype,
             original_filename=original_name,
             duration_seconds=duration_seconds,
+            recorded_at_local=recorded_at_local,
+            user_time_zone=request.form.get("user_time_zone"),
             recording_url_factory=lambda record_id: url_for(
                 "main.serve_recording", log_id=record_id
             ),
