@@ -1,21 +1,12 @@
 import { useEffect, useState } from 'react';
+import { loadWeeklySummaries, type JournalSummary } from '../data/weeklyJournal';
 
 type Recording = {
   id: number;
-  user_id: number;
-  log_date: string;
-  media_type: string;
-  storage_path: string;
-  title: string | null;
-  notes: string | null;
-  created_at: string;
   filename: string;
   recorded_at: string;
   recording_url: string;
   mime_type: string;
-  original_filename: string;
-  file_size_bytes: number | string;
-  chunk_count: number;
 };
 
 type RecordingsResponse = {
@@ -34,24 +25,19 @@ function formatSelectedDate(dateValue: string) {
   }).format(date);
 }
 
-function formatFileSize(size: number | string) {
-  const bytes = Number(size);
-  if (!Number.isFinite(bytes)) return String(size);
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(1)} ${units[unit]}`;
+function getWeekStart(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() - date.getDay());
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 export function DayRecordingsPage() {
   const date = new URLSearchParams(window.location.search).get('date') ?? '';
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [message, setMessage] = useState('Loading recordings…');
+  const [summaries, setSummaries] = useState<JournalSummary[]>([]);
+  const [summaryMessage, setSummaryMessage] = useState('Loading summary…');
 
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -79,12 +65,35 @@ export function DayRecordingsPage() {
     return () => { active = false; };
   }, [date]);
 
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setSummaryMessage('');
+      return;
+    }
+
+    let active = true;
+    setSummaries([]);
+    setSummaryMessage('Loading summary…');
+    loadWeeklySummaries(getWeekStart(date))
+      .then((entriesByDate) => {
+        if (!active) return;
+        setSummaries(entriesByDate[date] ?? []);
+        setSummaryMessage('');
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setSummaryMessage(error instanceof Error ? error.message : 'Could not load this day’s summary.');
+      });
+
+    return () => { active = false; };
+  }, [date]);
+
   const formattedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? formatSelectedDate(date) : 'Selected day';
 
   return (
     <main className="min-h-screen bg-[#fbfaf8] px-5 py-8 text-stone-800 sm:px-10 sm:py-12">
       <div className="mx-auto max-w-4xl">
-        <a className="text-sm underline decoration-stone-400 underline-offset-4 hover:text-[#887445]" href="/weekly">
+        <a className="text-sm underline decoration-stone-400 underline-offset-4 hover:text-[#887445]" href="/static/frontend/weekly">
           Back to your week
         </a>
         <header className="mb-8 mt-6">
@@ -120,23 +129,22 @@ export function DayRecordingsPage() {
                   src={`${recording.recording_url}?playback=${recording.id}-${Date.parse(recording.recorded_at)}`}
                 />
               )}
-              <dl className="mt-5 grid gap-x-6 gap-y-3 border-t border-stone-200 pt-4 text-sm sm:grid-cols-2">
-                <div><dt className="font-medium text-stone-500">Log ID</dt><dd>{recording.id}</dd></div>
-                <div><dt className="font-medium text-stone-500">User ID</dt><dd>{recording.user_id}</dd></div>
-                <div><dt className="font-medium text-stone-500">Media type</dt><dd>{recording.media_type}</dd></div>
-                <div><dt className="font-medium text-stone-500">Title</dt><dd>{recording.title || '—'}</dd></div>
-                <div><dt className="font-medium text-stone-500">Log date</dt><dd>{new Date(recording.log_date).toLocaleString()}</dd></div>
-                <div><dt className="font-medium text-stone-500">Created at</dt><dd>{new Date(recording.created_at).toLocaleString()}</dd></div>
-                <div><dt className="font-medium text-stone-500">Storage path</dt><dd className="break-all">{recording.storage_path}</dd></div>
-                <div><dt className="font-medium text-stone-500">Notes</dt><dd className="whitespace-pre-wrap">{recording.notes || '—'}</dd></div>
-                <div><dt className="font-medium text-stone-500">Original filename</dt><dd className="break-all">{recording.original_filename}</dd></div>
-                <div><dt className="font-medium text-stone-500">MIME type</dt><dd>{recording.mime_type}</dd></div>
-                <div><dt className="font-medium text-stone-500">File size</dt><dd>{formatFileSize(recording.file_size_bytes)}</dd></div>
-                <div><dt className="font-medium text-stone-500">Stored chunks</dt><dd>{recording.chunk_count}</dd></div>
-              </dl>
             </article>
           ))}
         </div>
+
+        {!message && recordings.length > 0 && (
+          <section aria-label="Full journal summaries" className="mt-8 rounded-2xl border border-stone-200 bg-white p-5 sm:p-7">
+            <h2 className="font-serif text-2xl">Full summary</h2>
+            {summaryMessage && <p className="mt-4 text-sm text-stone-500" role="status">{summaryMessage}</p>}
+            {!summaryMessage && summaries.length === 0 && <p className="mt-4 text-stone-600">No journal summary was saved for this day.</p>}
+            <div className="mt-4 space-y-4">
+              {summaries.map((summary, index) => (
+                <p className="leading-7 text-stone-700" key={`${index}-${summary.full_summary}`}>{summary.full_summary}</p>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

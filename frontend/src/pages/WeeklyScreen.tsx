@@ -3,10 +3,15 @@ import { Agent } from '../components/Agent/Agent';
 import { AgentSidebar } from '../components/Agent/AgentSidebar';
 import { Bubble } from '../components/Bubble/Bubble';
 import { Carousel } from '../components/Carousel/Carousel';
-import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
+import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates, type JournalSummary } from '../data/weeklyJournal';
 
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
+}
+
+function conciseSummaries(summaries: JournalSummary[]) {
+  const text = summaries.map((summary) => summary.concise_summary).filter(Boolean).join(' · ');
+  return text.length > 180 ? `${text.slice(0, 177).trimEnd()}…` : text;
 }
 
 export function WeeklyScreen() {
@@ -14,7 +19,7 @@ export function WeeklyScreen() {
   const [selectedDate, setSelectedDate] = useState('2026-10-02');
   const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
   const [weekStartLabel, setWeekStartLabel] = useState('September 27');
-  const [summariesByDate, setSummariesByDate] = useState<Record<string, string[]>>({});
+  const [summariesByDate, setSummariesByDate] = useState<Record<string, JournalSummary[]>>({});
   const [isLoadingSummaries, setIsLoadingSummaries] = useState(true);
   const [summariesError, setSummariesError] = useState('');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
@@ -60,7 +65,7 @@ export function WeeklyScreen() {
       : summariesError
         ? 'Summaries unavailable'
         : entry.summaries.length
-          ? `${entry.summaries.length} entr${entry.summaries.length === 1 ? 'y' : 'ies'}`
+          ? conciseSummaries(entry.summaries)
           : 'Nothing happened';
     return {
       ...item,
@@ -122,7 +127,7 @@ export function WeeklyScreen() {
             <a
               aria-label="Open profile"
               className="flex h-12 w-12 items-center justify-center rounded-full border border-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700"
-              href="/profile"
+              href="/static/frontend/profile"
             >
               <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
                 <circle cx="16" cy="16" r="13" stroke="currentColor" strokeWidth="1.5" />
@@ -138,7 +143,7 @@ export function WeeklyScreen() {
               onItemClick={(_item, index) => {
                 const entry = datedEntries[index];
                 if (entry) {
-                  window.location.assign(`/recordings?date=${encodeURIComponent(entry.dateKey)}`);
+                  window.location.assign(`/static/frontend/recordings?date=${encodeURIComponent(entry.dateKey)}`);
                 }
               }}
             />
@@ -151,13 +156,13 @@ export function WeeklyScreen() {
               onClick={() => setIsAgentSidebarOpen(true)}
             />
             <Bubble
-              heading={`Journal summaries · ${activeEntry.day}, ${activeEntry.dateLabel}`}
+              heading={`Daily summary · ${activeEntry.day}, ${activeEntry.dateLabel}`}
               text={summariesError
                 ? summariesError
                 : isLoadingSummaries
                   ? 'Checking this day…'
                   : activeEntry.summaries.length
-                    ? activeEntry.summaries.join(' · ')
+                    ? conciseSummaries(activeEntry.summaries)
                     : 'Nothing happened.'}
             />
           </section>

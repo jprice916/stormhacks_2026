@@ -42,7 +42,7 @@ export function LandingPage() {
     <main className="min-h-screen overflow-hidden bg-[#f9f6f1] text-[#473c21]">
       <div className="mx-auto max-w-7xl px-5 sm:px-10">
         <header className="flex items-center justify-between py-6 sm:py-8">
-          <a aria-label="Week by week home" className="flex items-center gap-3" href="/">
+          <a aria-label="Week by week home" className="flex items-center gap-3" href="/static/frontend/">
             <span className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#473c21] bg-[#473c21] text-[#f9f6f1]">
               <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
                 <path
@@ -66,13 +66,13 @@ export function LandingPage() {
             </a>
             <a
               className="hidden text-sm text-[#887445] transition-colors hover:text-[#473c21] md:inline"
-              href="/weekly"
+              href="/static/frontend/weekly"
             >
               Carousel preview
             </a>
             <a
               className="hidden text-sm text-[#887445] transition-colors hover:text-[#473c21] sm:inline"
-              href="/profile"
+              href="/static/frontend/profile"
             >
               Profile
             </a>
@@ -80,7 +80,7 @@ export function LandingPage() {
               <a
                 aria-label={`Open ${profile.name}'s profile`}
                 className="inline-flex max-w-[12rem] items-center gap-2 rounded-full border-2 border-[#998350] py-1 pl-1 pr-3 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:max-w-[16rem] sm:gap-3 sm:pr-4"
-                href="/profile"
+                href="/static/frontend/profile"
               >
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#bca880] bg-[#eeebe4] font-serif text-base text-[#887445]">
                   {profile.avatarUrl
@@ -92,7 +92,7 @@ export function LandingPage() {
             ) : (
               <a
                 className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5"
-                href="/login"
+                href="/static/frontend/login"
               >
                 Sign in
               </a>
@@ -114,7 +114,7 @@ export function LandingPage() {
             <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
               <a
                 className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
-                href={profile ? '/logger' : '/login'}
+                href={profile ? '/static/frontend/logger' : '/static/frontend/login'}
               >
                 {profile ? 'Open recording studio' : 'Sign in to get started'}
                 <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
@@ -123,7 +123,7 @@ export function LandingPage() {
               </a>
               <a
                 className="inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-sm font-medium text-[#887445] transition-colors hover:text-[#473c21] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
-                href="/weekly"
+                href="/static/frontend/weekly"
               >
                 Explore the carousel preview
               </a>

@@ -74,7 +74,7 @@ The transcript comes from speech-to-text and may contain minor typos, missing
 punctuation, or misheard words. Infer intended meaning only when context makes it
 clear. Do not invent, correct, or rely on uncertain details.
 
-Extract a concise summary, topic, emotion, and takeaways. Identify education starts,
+Extract a concise summary and a fuller 2-4 sentence summary, topic, emotion, and takeaways. Identify education starts,
 skill learning, career goals, new jobs, achievements, personal growth, and recurring
 struggles. When a user begins a learning path, create 2-4 supportive baseline
 questions at their stated level for future comparison.
@@ -94,7 +94,8 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
-  "summary": "one or two sentences",
+  "concise_summary": "one short sentence, no more than 20 words",
+  "summary": "full summary in 2-4 sentences, preserving the important context",
   "key_takeaways": ["point"],
   "growth_signal": {{
     "type": "education_start|career_goal|new_job|skill_building|aspiration|personal_growth|null",
@@ -296,6 +297,7 @@ Return ONLY JSON:
             "entry_type": entry_type,
             "core_topic": str(analysis.get("core_topic") or "journal entry")[:200],
             "emotion": str(analysis.get("emotion") or "neutral")[:80],
+            "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:280],
             "summary": str(analysis.get("summary") or transcript)[:4000],
             "key_takeaways": [str(item)[:500] for item in analysis.get("key_takeaways", []) if isinstance(item, str)][:8],
             "growth_signal": {
@@ -315,6 +317,7 @@ Return ONLY JSON:
             "entry_type": "general",
             "core_topic": "voice journal log",
             "emotion": "neutral",
+            "concise_summary": (transcript or "Hands-free entry log")[:280],
             "summary": transcript or "Hands-free entry log",
             "key_takeaways": ["User completed a vocal entry check-in."],
             "growth_signal": {"type": None, "topic": None, "future_revisit_reason": None, "baseline_questions": []},

@@ -29,7 +29,7 @@ export function LoginPage() {
                 return;
             }
 
-            window.location.assign(result.redirect || '/');
+            window.location.assign(result.redirect || '/static/frontend/profile');
         } catch (error) {
             setError(error instanceof TypeError
                 ? 'Could not reach Flask. Start the Flask app with “python run.py” and try again.'
@@ -44,7 +44,7 @@ export function LoginPage() {
     return (
         <main className="flex min-h-screen items-center justify-center bg-[#f9f6f1] px-5 py-12 text-[#473c21]">
             <section className="w-full max-w-md border-2 border-[#473c21] bg-[#f9f6f1] p-7 shadow-[7px_7px_0_#b39e6c] sm:p-10">
-                <a className="font-serif text-lg italic text-[#887445]" href="/">
+                <a className="font-serif text-lg italic text-[#887445]" href="/static/frontend/">
                     Week by week
                 </a>
                 <p className="mt-10 text-xs font-medium uppercase tracking-[0.17em] text-[#887445]">
@@ -98,7 +98,7 @@ export function LoginPage() {
                     </button>
                 </form>
                 <p className="mt-7 text-sm text-[#887445]">
-                    New here? <a className="font-medium text-[#473c21] underline underline-offset-4" href="/signup">Create an account</a>
+                    New here? <a className="font-medium text-[#473c21] underline underline-offset-4" href="/static/frontend/signup">Create an account</a>
                 </p>
             </section>
         </main>
