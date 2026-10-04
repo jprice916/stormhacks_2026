@@ -6,7 +6,7 @@ import {
   saveProfileName,
   saveProfilePicture,
   type Profile,
-} from '../data/mockProfile';
+} from '../data/profileApi';
 import './ProfilePage.css';
 
 const maxPictureBytes = 2 * 1024 * 1024;
@@ -204,7 +204,12 @@ export function ProfilePage() {
     let active = true;
     loadProfile()
       .then((data) => { if (active) setProfile(data); })
-      .catch(() => { if (active) setLoadError('Your profile couldn’t be opened. Please try once more.'); })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setLoadError(error instanceof Error
+          ? error.message
+          : 'Your profile couldn’t be opened. Please try once more.');
+      })
       .finally(() => { if (active) setIsLoading(false); });
     return () => { active = false; };
   }, []);
@@ -227,6 +232,10 @@ export function ProfilePage() {
   }, [isDeleteOpen, deleteState]);
 
   function closeDeleteDialog() {
+    if (deleteState === 'success') {
+      window.location.assign('/static/frontend/login');
+      return;
+    }
     setIsDeleteOpen(false);
     setDeletePhrase('');
     setDeleteState('idle');
@@ -264,9 +273,11 @@ export function ProfilePage() {
         URL.revokeObjectURL(localPreview);
         previewUrlRef.current = '';
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (previewUrlRef.current === localPreview) {
-          setPictureError('We couldn’t save that picture. Your preview is still here; please try again.');
+          setPictureError(error instanceof Error
+            ? error.message
+            : 'We couldn’t save that picture. Your preview is still here; please try again.');
         }
       })
       .finally(() => setIsSavingPicture(false));
@@ -284,8 +295,10 @@ export function ProfilePage() {
     try {
       setProfile(await saveProfileName(trimmedName));
       setIsEditingName(false);
-    } catch {
-      setNameError('We couldn’t save your name just now. Please try again.');
+    } catch (error) {
+      setNameError(error instanceof Error
+        ? error.message
+        : 'We couldn’t save your name just now. Please try again.');
     } finally {
       setIsSavingName(false);
     }
@@ -296,12 +309,14 @@ export function ProfilePage() {
     if (deletePhrase !== 'delete' || deleteState === 'loading') return;
     setDeleteState('loading');
     try {
-      await requestAccountDeletion();
+      await requestAccountDeletion(deletePhrase);
       setDeleteState('success');
-      setDeleteMessage('Your account deletion request has been received.');
-    } catch {
+      setDeleteMessage('Your account and saved moments have been deleted.');
+    } catch (error) {
       setDeleteState('error');
-      setDeleteMessage('We couldn’t send that request. Please try again.');
+      setDeleteMessage(error instanceof Error
+        ? error.message
+        : 'We couldn’t delete your account. Please try again.');
     }
   }
 
@@ -435,7 +450,7 @@ export function ProfilePage() {
               <div>
                 <p className="profile-eyebrow">If you’re sure</p>
                 <h2 className="delete-title profile-handwritten" id="delete-title">Ready to close this little chapter?</h2>
-                <p className="delete-copy">You can request to delete your account and all the moments you’ve saved.</p>
+                <p className="delete-copy">Delete your account and the moments you’ve saved.</p>
               </div>
               <button
                 className="profile-button profile-button--warm"

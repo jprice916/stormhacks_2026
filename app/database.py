@@ -62,6 +62,7 @@ def initialize_database() -> None:
             username VARCHAR(80) NOT NULL UNIQUE,
             email VARCHAR(254) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
+            profile_picture LONGBLOB NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS audio_visual_logs (
@@ -149,10 +150,10 @@ def initialize_database() -> None:
         with connection.cursor() as cursor:
             for statement in statements:
                 cursor.execute(statement)
-            # TEMPORARY-MIGRATION-SAFE: existing hackathon databases may have the
-            # earlier revisit_cues schema. These statements are safe to rerun and
-            # can be replaced by a formal migration tool during a later refactor.
+            # TEMPORARY-MIGRATION-SAFE: these idempotent updates support databases
+            # created before the profile-picture and revisit-cue columns existed.
             for statement in (
+                "ALTER TABLE users ADD COLUMN profile_picture LONGBLOB NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_suggested_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_dismissed_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN shown_count INT UNSIGNED NOT NULL DEFAULT 0",
@@ -162,6 +163,7 @@ def initialize_database() -> None:
                 except MySQLError as error:
                     if error.args and error.args[0] != 1060:  # Duplicate column
                         raise
+            cursor.execute("ALTER TABLE users MODIFY COLUMN profile_picture LONGBLOB NULL")
         connection.commit()
     except Exception:
         connection.rollback()

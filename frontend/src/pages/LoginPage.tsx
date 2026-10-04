@@ -14,6 +14,14 @@ export function LoginPage() {
                 method: 'POST',
                 body: new FormData(event.currentTarget),
             });
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                if (!response.ok) {
+                    throw new Error(`The sign-in service returned an error (${response.status}). Check the Flask terminal for details.`);
+                }
+                throw new Error('The sign-in service returned an unexpected response. Check that Flask is running.');
+            }
+
             const result = await response.json();
 
             if (!response.ok) {
@@ -22,8 +30,12 @@ export function LoginPage() {
             }
 
             window.location.assign(result.redirect || '/');
-        } catch {
-            setError('Could not reach the sign-in service. Please try again.');
+        } catch (error) {
+            setError(error instanceof TypeError
+                ? 'Could not reach Flask. Start the Flask app with “python run.py” and try again.'
+                : error instanceof Error
+                    ? error.message
+                    : 'Could not sign in. Please try again.');
         } finally {
             setIsSubmitting(false);
         }

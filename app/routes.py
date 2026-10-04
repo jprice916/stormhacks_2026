@@ -1,6 +1,10 @@
 """HTTP routes for the starter app."""
 
 from pathlib import Path
+import base64
+import re
+import json
+from datetime import datetime, time as datetime_time, timedelta
 
 from flask import Blueprint, current_app, jsonify, render_template, send_from_directory
 import os
@@ -36,6 +40,11 @@ from app.services.db_service import DatabaseService
 from app.services.gemini_service import GeminiRequestError, GeminiService
 from app.services.revisit_service import RevisitService
 from app.services.login_service import LoginService
+from app.services.profile_service import (
+    DuplicateUsernameError,
+    InvalidCurrentPasswordError,
+    ProfileService,
+)
 from app.services.stt_service import STTService
 
 main = Blueprint("main", __name__)
@@ -49,6 +58,7 @@ LIVE_REFLECTION_MIN_WORDS = 10
 live_reflection_limits: dict[str, dict[str, float | int]] = {}
 live_reflection_lock = threading.Lock()
 login_service = LoginService()
+profile_service = ProfileService()
 # email_service = EmailService()
 
 # Configure local directory for storing audio/video uploads
@@ -87,8 +97,11 @@ def my_videos():
 
 @main.route("/login", methods=["GET", "POST"])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for("main.index"))
+    if request.method == "GET":
+        frontend_dir = Path(current_app.static_folder) / "frontend"
+        if (frontend_dir / "index.html").is_file():
+            return send_from_directory(frontend_dir, "index.html")
+        return render_template("login.html")
 
     if request.method == "POST":
         user = login_service.authenticate(
@@ -104,10 +117,217 @@ def login():
                 and "\\" not in next_url
             ):
                 return redirect(next_url)
-            return redirect(url_for("main.index"))
+            return redirect("/static/frontend/profile")
         flash("Username/email or password is incorrect.", "error")
 
     return render_template("login.html")
+
+
+@main.get("/static/frontend/login")
+def frontend_login_alias():
+    """Redirect the frontend-base login path to the app's login route."""
+    return redirect(url_for("main.login"))
+
+
+@main.get("/static/frontend/profile")
+def frontend_profile_alias():
+    """Serve the React profile route when Flask is serving the built frontend."""
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
+    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
+    return redirect(f"{dev_server.rstrip('/')}/static/frontend/profile")
+
+
+@main.post("/api/login")
+def api_login():
+    """Authenticate the React login form and establish a Flask session."""
+    user = login_service.authenticate(
+        request.form.get("identity", ""),
+        request.form.get("password", ""),
+    )
+    if user is None:
+        return jsonify(message="Username/email or password is incorrect."), 401
+
+    login_user(user, remember=request.form.get("remember") == "true")
+    next_url = request.args.get("next", "")
+    if not (
+        next_url.startswith("/")
+        and not next_url.startswith("//")
+        and "\\" not in next_url
+    ):
+        next_url = "/static/frontend/profile"
+    return jsonify(ok=True, redirect=next_url)
+
+
+def _profile_picture_mime(image: bytes) -> str | None:
+    """Identify supported profile image formats from their file signatures."""
+    if image.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(image) >= 12 and image[:4] == b"RIFF" and image[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@main.get("/api/profile")
+def api_profile():
+    """Return profile fields loaded directly from the signed-in user's database row."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to view your profile."), 401
+    try:
+        profile = profile_service.get_profile(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not load profile from TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    if profile is None:
+        return jsonify(message="This account could not be found."), 404
+
+    image = profile.get("profile_picture")
+    mime_type = _profile_picture_mime(bytes(image)) if image else None
+    avatar_url = None
+    if image and mime_type:
+        avatar_url = f"data:{mime_type};base64,{base64.b64encode(bytes(image)).decode('ascii')}"
+    return jsonify(profile={
+        "name": profile["username"],
+        "email": profile["email"],
+        "avatarUrl": avatar_url,
+    })
+
+
+@main.put("/api/profile")
+def api_update_profile():
+    """Update the authenticated user's username."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to update your profile."), 401
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("name", "")
+    if not isinstance(username, str) or not 3 <= len(username.strip()) <= 80:
+        return jsonify(message="Username must be between 3 and 80 characters."), 400
+    username = username.strip()
+    try:
+        profile_service.update_username(int(current_user.get_id()), username)
+    except DuplicateUsernameError:
+        return jsonify(message="That username is already in use."), 409
+    except MySQLError:
+        current_app.logger.exception("Could not update profile username in TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    return api_profile()
+
+
+@main.post("/api/profile/picture")
+def api_update_profile_picture():
+    """Store a small profile image in the user's TiDB row."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to update your profile picture."), 401
+    picture = request.files.get("picture")
+    if picture is None:
+        return jsonify(message="Choose a PNG, JPG, or WebP picture."), 400
+    image = picture.stream.read(2 * 1024 * 1024 + 1)
+    if not image or len(image) > 2 * 1024 * 1024:
+        return jsonify(message="Choose a picture smaller than 2 MB."), 400
+    if _profile_picture_mime(image) is None:
+        return jsonify(message="Choose a PNG, JPG, or WebP picture."), 400
+    try:
+        profile_service.update_picture(int(current_user.get_id()), image)
+    except MySQLError:
+        current_app.logger.exception("Could not save profile picture in TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    return api_profile()
+
+
+@main.post("/api/profile/password")
+def api_update_password():
+    """Verify the current password and store a hash of the new password."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to change your password."), 401
+    payload = request.get_json(silent=True) or {}
+    current_password = payload.get("currentPassword", "")
+    new_password = payload.get("newPassword", "")
+    if not isinstance(current_password, str) or not isinstance(new_password, str):
+        return jsonify(message="Enter your current and new passwords."), 400
+    if not 8 <= len(new_password) <= 128:
+        return jsonify(message="Your new password must be between 8 and 128 characters."), 400
+    try:
+        profile_service.update_password(int(current_user.get_id()), current_password, new_password)
+    except InvalidCurrentPasswordError:
+        return jsonify(message="Your current password is incorrect."), 401
+    except MySQLError:
+        current_app.logger.exception("Could not update account password in TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    return jsonify(ok=True)
+
+
+@main.delete("/api/profile")
+def api_delete_profile():
+    """Delete the signed-in user's account and database records."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to delete your account."), 401
+    payload = request.get_json(silent=True) or {}
+    if payload.get("confirmation") != "delete":
+        return jsonify(message='Type "delete" to confirm account removal.'), 400
+    try:
+        profile_service.delete_account(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not delete account data from TiDB")
+        return jsonify(message="The account could not be deleted. Please try again."), 503
+    logout_user()
+    return jsonify(ok=True)
+
+
+@main.get("/api/journal/takeaways")
+def api_journal_takeaways():
+    """Return the signed-in user's journal takeaways for one Sunday-based week."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to view journal highlights."), 401
+
+    week_start_value = request.args.get("week_start", "")
+    try:
+        week_start = datetime.strptime(week_start_value, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify(message="week_start must be a date in YYYY-MM-DD format."), 400
+    if week_start.weekday() != 6:
+        return jsonify(message="week_start must be a Sunday."), 400
+
+    start_at = datetime.combine(week_start, datetime_time.min)
+    end_at = start_at + timedelta(days=7)
+    connection = None
+    try:
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT DATE(created_at) AS entry_date, key_takeaways
+                   FROM journal_entries
+                   WHERE user_id = %s AND created_at >= %s AND created_at < %s
+                   ORDER BY created_at, id""",
+                (current_user.get_id(), start_at, end_at),
+            )
+            rows = cursor.fetchall()
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Could not load journal takeaways from TiDB")
+        return jsonify(message="Journal highlights could not be loaded from the database."), 503
+    finally:
+        if connection is not None:
+            connection.close()
+
+    takeaways_by_date: dict[str, list[str]] = {}
+    for row in rows:
+        value = row.get("key_takeaways")
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                value = []
+        if not isinstance(value, list):
+            continue
+        date_key = row["entry_date"].isoformat()
+        daily_takeaways = takeaways_by_date.setdefault(date_key, [])
+        daily_takeaways.extend(
+            item.strip() for item in value if isinstance(item, str) and item.strip()
+        )
+
+    return jsonify(week_start=week_start.isoformat(), takeaways=takeaways_by_date)
 
 
 @main.route("/signup", methods=["GET", "POST"])
@@ -135,7 +355,7 @@ def signup():
                 flash("That username or email is already registered.", "error")
             else:
                 login_user(user)
-                return redirect(url_for("main.index"))
+                return redirect("/static/frontend/profile")
 
     return render_template("signup.html")
 
