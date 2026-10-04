@@ -61,10 +61,10 @@ export function LandingPage() {
 
         <section className="grid items-center gap-14 pb-20 pt-12 sm:pb-28 sm:pt-16 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-20">
           <div className="max-w-2xl">
-            <h1 className="max-w-xl font-serif text-5xl leading-[1.05] tracking-tight text-[#473c21] sm:text-6xl lg:text-7xl">
+            <h1 className="max-w-xl font-serif text-[3rem] leading-[1.05] tracking-tight text-[#473c21] sm:text-[3.75rem] lg:text-[4.5rem]">
               Your little moments deserve to be remembered.
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-[#887445] sm:text-xl sm:leading-9">
+            <p className="mt-6 max-w-xl text-lg leading-[3rem] text-[#887445] sm:text-xl sm:leading-[3.375rem]">
               Every memory should have a special place, you can see them all in this little space
             </p>
             <div className="mt-9 flex max-w-xl justify-center">
