@@ -1,6 +1,6 @@
 # Flask Web App
 
-A small Flask web app starter with server-rendered templates and static assets.
+A Flask web app with a webcam and microphone recording test page.
 
 ## Requirements
 
@@ -16,7 +16,13 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-Open <http://127.0.0.1:5000>. The app reloads automatically when `FLASK_DEBUG=1` is set.
+Open <http://127.0.0.1:5000>. The app reloads automatically when `FLASK_DEBUG=1` is set. Camera access works on `localhost` or HTTPS and requires browser permission.
+
+## Recording test page
+
+Select **Start recording** to request camera and microphone access, then **Stop** when finished. The page asks for 1280×720 at up to 30 FPS (the browser may choose another supported size); the badge shows the actual camera resolution. Recordings can be previewed and downloaded in the browser. The timer stays at the bottom of the page.
+
+**Send to TiDB (placeholder)** posts the WebM recording to `POST /api/recordings`. The Flask endpoint currently confirms receipt and responds that nothing was saved; no database or file storage is connected. See `sql/recordings.sql` for a starting TiDB metadata table. The suggested design stores the video in object storage and saves its URI and metadata in TiDB.
 
 On macOS or Linux, activate the environment with `source .venv/bin/activate`.
 
