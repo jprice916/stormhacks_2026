@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import {
   changePassword,
   loadProfile,
+  logoutUser,
   requestAccountDeletion,
   saveProfileName,
   saveProfilePicture,
@@ -184,6 +185,8 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [nameError, setNameError] = useState('');
@@ -320,6 +323,21 @@ export function ProfilePage() {
     }
   }
 
+  async function handleLogout() {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    setLogoutError('');
+    try {
+      await logoutUser();
+      window.location.assign('/static/frontend/login');
+    } catch (error) {
+      setLogoutError(error instanceof Error
+        ? error.message
+        : 'We couldn’t sign you out. Please try again.');
+      setIsLoggingOut(false);
+    }
+  }
+
   const displayName = profile?.name ?? '';
   const avatarUrl = picturePreview || profile?.avatarUrl;
 
@@ -339,8 +357,13 @@ export function ProfilePage() {
           <nav aria-label="Main navigation" className="profile-navigation">
             <a href="weekly">My weeks</a>
             <span aria-current="page" className="profile-current-page">Profile</span>
+            <button className="profile-button profile-button--quiet profile-button--small" disabled={isLoggingOut} onClick={handleLogout} type="button">
+              {isLoggingOut ? 'Signing out…' : 'Log out'}
+            </button>
           </nav>
         </header>
+
+        {logoutError ? <p className="profile-inline-error" role="alert">{logoutError}</p> : null}
 
         <div className="profile-page-intro">
           <div>
@@ -437,6 +460,14 @@ export function ProfilePage() {
                   <span aria-hidden="true" className="profile-note-sparkle">✳</span>
                   <p className="profile-handwritten">Little by little is still forward.</p>
                 </div>
+                <button
+                  className="profile-button profile-button--quiet profile-button--small profile-signout-button"
+                  disabled={isLoggingOut}
+                  onClick={handleLogout}
+                  type="button"
+                >
+                  {isLoggingOut ? 'Signing out…' : 'Sign out'}
+                </button>
               </div>
               <svg aria-hidden="true" className="profile-hero-doodle" fill="none" viewBox="0 0 74 78">
                 <path d="M36 8c2 12 8 17 21 19-13 3-19 8-21 22-3-14-8-19-21-22 13-2 18-7 21-19Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
@@ -459,7 +490,7 @@ export function ProfilePage() {
                 ref={deleteButtonRef}
                 type="button"
               >
-                {deleteState === 'success' ? 'Request sent' : 'Delete account'}
+                {deleteState === 'success' ? 'Account deleted' : 'Delete account'}
               </button>
             </section>
           </>
@@ -478,7 +509,7 @@ export function ProfilePage() {
             {deleteState === 'success' ? (
               <div className="delete-success">
                 <p className="profile-eyebrow">Received</p>
-                <h2 className="profile-modal-title profile-handwritten" id="delete-modal-title">We’ve got your note.</h2>
+                <h2 className="profile-modal-title profile-handwritten" id="delete-modal-title">Your account is deleted.</h2>
                 <p className="profile-modal-copy" id="delete-description">{deleteMessage}</p>
                 <button className="profile-button profile-button--primary" onClick={closeDeleteDialog} type="button">Done for now</button>
               </div>
@@ -502,7 +533,7 @@ export function ProfilePage() {
                   {deleteMessage ? <p className="profile-inline-error" role="alert">{deleteMessage}</p> : null}
                   <div className="delete-actions">
                     <button className="profile-button profile-button--primary" disabled={deletePhrase !== 'delete' || deleteState === 'loading'} type="submit">
-                      {deleteState === 'loading' ? <><span aria-hidden="true" className="tiny-spinner" />Sending…</> : 'Yes, delete my account'}
+                      {deleteState === 'loading' ? <><span aria-hidden="true" className="tiny-spinner" />Deleting…</> : 'Yes, delete my account'}
                     </button>
                     <button className="profile-button profile-button--quiet" disabled={deleteState === 'loading'} onClick={closeDeleteDialog} type="button">Keep my account</button>
                   </div>

@@ -29,6 +29,13 @@ export async function loadProfile(): Promise<Profile> {
   return result.profile;
 }
 
+export async function logoutUser(): Promise<void> {
+  await readJson(await fetch('/api/logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+  }));
+}
+
 export async function saveProfileName(name: string): Promise<Profile> {
   const result = await readJson<{ profile: Profile }>(await fetch('/api/profile', {
     method: 'PUT',

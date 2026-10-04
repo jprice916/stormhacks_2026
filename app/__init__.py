@@ -1,6 +1,7 @@
 """Flask application setup."""
 
 import os
+import secrets
 from pathlib import Path
 
 from flask import Flask
@@ -46,7 +47,14 @@ def create_app() -> Flask:
     """Create and configure the Flask application."""
     load_project_env()
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-only-change-me")
+    secret_key = os.getenv("FLASK_SECRET_KEY")
+    if not secret_key:
+        secret_key = secrets.token_hex(32)
+        app.logger.warning(
+            "FLASK_SECRET_KEY is unset; sessions will be invalidated when the app restarts. "
+            "Set a private, persistent FLASK_SECRET_KEY in the environment."
+        )
+    app.config["SECRET_KEY"] = secret_key
     app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"

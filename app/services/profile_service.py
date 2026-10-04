@@ -85,38 +85,47 @@ class ProfileService:
         finally:
             connection.close()
 
-    def delete_account(self, user_id: int) -> None:
+    def delete_account(self, user_id: int) -> bool:
         connection = get_connection()
         legacy_uploads: list[str] = []
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT id, storage_path FROM audio_visual_logs WHERE user_id = %s",
-                    (user_id,),
-                )
-                logs = cursor.fetchall()
-                log_ids = [log["id"] for log in logs]
-                legacy_uploads = [log["storage_path"] for log in logs if log.get("storage_path")]
+                def table_exists(table: str) -> bool:
+                    cursor.execute(
+                        """SELECT 1 FROM information_schema.TABLES
+                           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s LIMIT 1""",
+                        (table,),
+                    )
+                    return cursor.fetchone() is not None
+
+                log_ids: list[int] = []
+                if table_exists("audio_visual_logs"):
+                    cursor.execute(
+                        "SELECT id, storage_path FROM audio_visual_logs WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    logs = cursor.fetchall()
+                    log_ids = [log["id"] for log in logs]
+                    legacy_uploads = [log["storage_path"] for log in logs if log.get("storage_path")]
 
                 if log_ids:
                     placeholders = ", ".join(["%s"] * len(log_ids))
                     for table in ("recording_chunks", "recording_media"):
-                        cursor.execute(
-                            """SELECT 1 FROM information_schema.TABLES
-                               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s LIMIT 1""",
-                            (table,),
-                        )
-                        if cursor.fetchone():
+                        if table_exists(table):
                             cursor.execute(
                                 f"DELETE FROM {table} WHERE log_id IN ({placeholders})",
                                 tuple(log_ids),
                             )
                     cursor.execute("DELETE FROM audio_visual_logs WHERE user_id = %s", (user_id,))
 
-                # These tables use a string user_id and do not have cascading FKs.
+                # These related tables are optional and use a string user_id.
                 for table in ("important_events", "revisit_cues", "journal_entries"):
-                    cursor.execute(f"DELETE FROM {table} WHERE user_id = %s", (str(user_id),))
+                    if table_exists(table):
+                        cursor.execute(f"DELETE FROM {table} WHERE user_id = %s", (str(user_id),))
                 cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+                if cursor.rowcount != 1:
+                    connection.rollback()
+                    return False
             connection.commit()
         except Exception:
             connection.rollback()
@@ -136,3 +145,4 @@ class ProfileService:
                     candidate.unlink(missing_ok=True)
                 except OSError:
                     pass
+        return True

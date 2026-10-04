@@ -358,6 +358,10 @@
   font-size: 14px;
 }
 
+.profile-signout-button {
+  margin-top: 17px;
+}
+
 .profile-note-sparkle {
   color: #a78245;
   font-size: 17px;

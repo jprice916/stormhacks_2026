@@ -126,7 +126,7 @@ def login():
 @main.get("/static/frontend/login")
 def frontend_login_alias():
     """Redirect the frontend-base login path to the app's login route."""
-    return redirect(url_for("main.login"))
+    return redirect(url_for("main.login", **request.args))
 
 
 @main.get("/static/frontend/profile")
@@ -142,10 +142,14 @@ def frontend_profile_alias():
 @main.post("/api/login")
 def api_login():
     """Authenticate the React login form and establish a Flask session."""
-    user = login_service.authenticate(
-        request.form.get("identity", ""),
-        request.form.get("password", ""),
-    )
+    try:
+        user = login_service.authenticate(
+            request.form.get("identity", ""),
+            request.form.get("password", ""),
+        )
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Sign-in could not reach the account database")
+        return jsonify(message="The sign-in service is unavailable. Please check the database connection and try again."), 503
     if user is None:
         return jsonify(message="Username/email or password is incorrect."), 401
 
@@ -158,6 +162,13 @@ def api_login():
     ):
         next_url = "/static/frontend/profile"
     return jsonify(ok=True, redirect=next_url)
+
+
+@main.post("/api/logout")
+def api_logout():
+    """End the current Flask session for the React profile page."""
+    logout_user()
+    return jsonify(ok=True)
 
 
 def _profile_picture_mime(image: bytes) -> str | None:
@@ -268,10 +279,12 @@ def api_delete_profile():
     if payload.get("confirmation") != "delete":
         return jsonify(message='Type "delete" to confirm account removal.'), 400
     try:
-        profile_service.delete_account(int(current_user.get_id()))
+        deleted = profile_service.delete_account(int(current_user.get_id()))
     except MySQLError:
         current_app.logger.exception("Could not delete account data from TiDB")
         return jsonify(message="The account could not be deleted. Please try again."), 503
+    if not deleted:
+        return jsonify(message="The account was not found, so nothing was deleted."), 404
     logout_user()
     return jsonify(ok=True)
 
