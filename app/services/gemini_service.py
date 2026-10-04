@@ -87,11 +87,15 @@ The transcript comes from speech-to-text and may contain minor typos, missing
 punctuation, or misheard words. Infer intended meaning only when context makes it
 clear. Do not invent, correct, or rely on uncertain details.
 
+<<<<<<< HEAD
+Extract a concise summary and a fuller 2-4 sentence summary, topic, emotion, and takeaways. Identify education starts,
+=======
 Create two summaries: a detailed factual summary in 3-5 sentences and a concise
 retrospective recap of at most 3 sentences. The concise recap must begin with
 "On this day, you..." and describe what happened without adding encouragement,
 advice, or facts the user did not state. Also extract a topic, emotion, and takeaways.
 Identify education starts,
+>>>>>>> 9991786ca1c0404a5f123f18265af92a64ba5c42
 skill learning, career goals, new jobs, achievements, personal growth, and recurring
 struggles. When a user begins a learning path, create 2-4 supportive baseline
 questions at their stated level for future comparison.
@@ -111,8 +115,13 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
+<<<<<<< HEAD
+  "concise_summary": "one short sentence, no more than 20 words",
+  "summary": "full summary in 2-4 sentences, preserving the important context",
+=======
   "summary": "detailed factual summary in 3-5 sentences beginning with On this day, you...",
   "concise_summary": "at most 3 sentences beginning with On this day, you...",
+>>>>>>> 9991786ca1c0404a5f123f18265af92a64ba5c42
   "key_takeaways": ["point"],
   "growth_signal": {{
     "type": "education_start|career_goal|new_job|skill_building|aspiration|personal_growth|null",
@@ -333,6 +342,7 @@ Return ONLY JSON:
             "entry_type": entry_type,
             "core_topic": str(analysis.get("core_topic") or "journal entry")[:200],
             "emotion": str(analysis.get("emotion") or "neutral")[:80],
+            "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:280],
             "summary": str(analysis.get("summary") or transcript)[:4000],
             "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:1500],
             "key_takeaways": [str(item)[:500] for item in analysis.get("key_takeaways", []) if isinstance(item, str)][:8],
@@ -352,6 +362,7 @@ Return ONLY JSON:
             "entry_type": "general",
             "core_topic": "voice journal log",
             "emotion": "neutral",
+            "concise_summary": (transcript or "Hands-free entry log")[:280],
             "summary": transcript or "Hands-free entry log",
             "key_takeaways": ["User completed a vocal entry check-in."],
             "growth_signal": {"type": None, "topic": None, "future_revisit_reason": None, "baseline_questions": []},

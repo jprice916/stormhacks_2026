@@ -33,14 +33,20 @@ class DatabaseService:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO journal_entries
-                       (user_id, transcript, entry_type, core_topic, emotion, summary,
+                       (user_id, transcript, entry_type, core_topic, emotion, summary, analysis_json,
                         key_takeaways, reflection_question, reflection_quote,
+<<<<<<< HEAD
+                        temporal_references, embedding, video_filename)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+=======
                         temporal_references, embedding, video_filename, recording_log_id,
                         analysis_json)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+>>>>>>> 9991786ca1c0404a5f123f18265af92a64ba5c42
                     (
                         payload["user_id"], payload["transcript"], payload["entry_type"],
                         payload["core_topic"], analysis.get("emotion", "neutral"), payload["summary"],
+                        json.dumps(analysis, ensure_ascii=False),
                         json.dumps(analysis.get("key_takeaways", [])), None,
                         analysis.get("concise_summary"), analysis.get("temporal_references"),
                         payload["embedding"], payload["video_filename"],

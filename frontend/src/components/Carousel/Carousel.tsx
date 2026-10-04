@@ -18,6 +18,7 @@ export function Carousel({ items, onActiveChange, onItemClick }: CarouselProps) 
         aspectRatio={1}
         autoplay="off"
         cardWidth={250}
+        captions
         draggable
         focusOnClick
         gap={22}

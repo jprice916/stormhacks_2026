@@ -3,6 +3,7 @@
 from pathlib import Path
 from io import BytesIO
 import base64
+import json
 import re
 from datetime import datetime, time as datetime_time, timedelta
 
@@ -85,13 +86,59 @@ def index():
     frontend_dir = Path(current_app.static_folder) / "frontend"
     if (frontend_dir / "index.html").is_file():
         return send_from_directory(frontend_dir, "index.html")
-    return redirect(url_for("main.logger"))
+    return redirect("/static/frontend/logger")
 
 
 @main.get("/logger")
 @login_required
 def logger():
     return send_from_directory(current_app.static_folder, "frontend/index.html")
+
+
+def _serve_react_page(page: str = ""):
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
+    page_url = f"/static/frontend/{page}" if page else "/static/frontend/"
+    query_string = request.query_string.decode()
+    query_suffix = f"?{query_string}" if query_string else ""
+    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
+    return redirect(f"{dev_server.rstrip('/')}{page_url}{query_suffix}")
+
+
+@main.get("/static/frontend/")
+def frontend_home():
+    return _serve_react_page()
+
+
+@main.get("/static/frontend/login")
+def frontend_login():
+    return _serve_react_page("login")
+
+
+@main.get("/static/frontend/profile")
+def frontend_profile():
+    return _serve_react_page("profile")
+
+
+@main.get("/static/frontend/weekly")
+def frontend_weekly():
+    return _serve_react_page("weekly")
+
+
+@main.get("/static/frontend/logger")
+def frontend_logger():
+    return _serve_react_page("logger")
+
+
+@main.get("/static/frontend/my-videos")
+def frontend_my_videos():
+    return _serve_react_page("my-videos")
+
+
+@main.get("/static/frontend/recordings")
+def frontend_recordings():
+    return _serve_react_page("recordings")
 
 
 @main.get("/my-videos")
@@ -128,7 +175,7 @@ def login():
                 and "\\" not in next_url
             ):
                 return redirect(next_url)
-            return redirect(url_for("main.profile"))
+            return redirect("/static/frontend/profile")
         flash("Username/email or password is incorrect.", "error")
 
     return render_template("login.html")
@@ -143,7 +190,7 @@ def day_recordings():
     dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
     query_string = request.query_string.decode()
     query_suffix = f"?{query_string}" if query_string else ""
-    return redirect(f"{dev_server.rstrip('/')}/recordings{query_suffix}")
+    return redirect(f"{dev_server.rstrip('/')}/static/frontend/recordings{query_suffix}")
 
 
 @main.post("/api/login")
@@ -167,7 +214,7 @@ def api_login():
         and not next_url.startswith("//")
         and "\\" not in next_url
     ):
-        next_url = url_for("main.profile")
+        next_url = "/static/frontend/profile"
     return jsonify(ok=True, redirect=next_url)
 
 
@@ -317,7 +364,7 @@ def api_journal_summaries():
         connection = get_connection()
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT DATE(created_at) AS entry_date, summary
+                """SELECT DATE(created_at) AS entry_date, summary, analysis_json
                    FROM journal_entries
                    WHERE user_id = %s AND created_at >= %s AND created_at < %s
                    ORDER BY created_at, id""",
@@ -331,21 +378,39 @@ def api_journal_summaries():
         if connection is not None:
             connection.close()
 
-    summaries_by_date: dict[str, list[str]] = {}
+    summaries_by_date: dict[str, list[dict[str, str]]] = {}
     for row in rows:
-        summary = row.get("summary")
-        if not isinstance(summary, str) or not summary.strip():
-            continue
-        date_key = row["entry_date"].isoformat()
-        summaries_by_date.setdefault(date_key, []).append(summary.strip())
+        analysis = row.get("analysis_json")
+        if isinstance(analysis, str):
+            try:
+                analysis = json.loads(analysis)
+            except json.JSONDecodeError:
+                analysis = {}
+        if not isinstance(analysis, dict):
+            analysis = {}
 
-    return jsonify(week_start=week_start.isoformat(), summaries=summaries_by_date)
+        full_summary = row.get("summary")
+        if not isinstance(full_summary, str) or not full_summary.strip():
+            full_summary = analysis.get("summary")
+        if not isinstance(full_summary, str) or not full_summary.strip():
+            continue
+        concise_summary = analysis.get("concise_summary")
+        if not isinstance(concise_summary, str) or not concise_summary.strip():
+            concise_summary = full_summary
+        date_key = row["entry_date"].isoformat()
+        summaries_by_date.setdefault(date_key, []).append({
+            "concise_summary": concise_summary.strip(),
+            "full_summary": full_summary.strip(),
+        })
+
+    return jsonify(week_start=week_start.isoformat(), entries_by_date=summaries_by_date)
 
 
 @main.route("/signup", methods=["GET", "POST"])
+@main.route("/static/frontend/signup", methods=["GET", "POST"])
 def signup():
     if current_user.is_authenticated:
-        return redirect(url_for("main.index"))
+        return redirect("/static/frontend/profile")
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -367,7 +432,7 @@ def signup():
                 flash("That username or email is already registered.", "error")
             else:
                 login_user(user)
-                return redirect(url_for("main.profile"))
+                return redirect("/static/frontend/profile")
 
     return render_template("signup.html")
 
@@ -380,11 +445,11 @@ def verify_email(token):
     )
     if user is None:
         flash("This verification link is invalid, expired, or already used.", "error")
-        return redirect(url_for("main.login"))
+        return redirect("/static/frontend/login")
 
     login_user(user)
     flash("Your email is verified and your account is ready.", "info")
-    return redirect(url_for("main.index"))
+    return redirect("/static/frontend/profile")
 
 
 @main.post("/logout")
@@ -392,7 +457,7 @@ def verify_email(token):
 def logout():
     logout_user()
     flash("You have been signed out.", "info")
-    return redirect(url_for("main.login"))
+    return redirect("/static/frontend/login")
 
 
 @main.get("/database")

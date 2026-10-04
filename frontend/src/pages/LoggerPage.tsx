@@ -476,8 +476,8 @@ export function LoggerPage() {
     <main className="min-h-screen bg-[#f9f6f1] px-5 pb-24 pt-7 text-[#473c21] sm:px-10 sm:pt-10">
       <div className="mx-auto max-w-4xl">
         <header className="flex items-center justify-between border-b border-[#ddd5c3] pb-6">
-          <a className="font-serif text-xl italic tracking-wide" href="/">Week by week</a>
-          <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href="/my-videos">My videos</a>
+          <a className="font-serif text-xl italic tracking-wide" href="/static/frontend/">Week by week</a>
+          <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href="/static/frontend/my-videos">My videos</a>
         </header>
 
         <section className="relative mt-10 border-2 border-[#473c21] bg-[#f9f6f1] p-5 shadow-[7px_7px_0_#b39e6c] sm:p-8" aria-labelledby="recorder-title">

@@ -122,6 +122,7 @@ def initialize_database() -> None:
             core_topic VARCHAR(200) NOT NULL,
             emotion VARCHAR(80) NOT NULL,
             summary TEXT NOT NULL,
+            analysis_json JSON NULL,
             key_takeaways JSON,
             reflection_question JSON,
             reflection_quote TEXT,
@@ -175,6 +176,7 @@ def initialize_database() -> None:
             # created before the profile-picture and revisit-cue columns existed.
             for statement in (
                 "ALTER TABLE users ADD COLUMN profile_picture LONGBLOB NULL",
+                "ALTER TABLE journal_entries ADD COLUMN analysis_json JSON NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_suggested_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_dismissed_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN shown_count INT UNSIGNED NOT NULL DEFAULT 0",
