@@ -74,7 +74,9 @@ The transcript comes from speech-to-text and may contain minor typos, missing
 punctuation, or misheard words. Infer intended meaning only when context makes it
 clear. Do not invent, correct, or rely on uncertain details.
 
-Extract a concise summary, topic, emotion, and takeaways. Identify education starts,
+Extract a concise weekly recap, topic, emotion, and takeaways. The recap must be at
+most three short sentences, begin with "On this day, you...", and preserve only the
+most meaningful events, decisions, or progress. Identify education starts,
 skill learning, career goals, new jobs, achievements, personal growth, and recurring
 struggles. When a user begins a learning path, create 2-4 supportive baseline
 questions at their stated level for future comparison.
@@ -94,7 +96,7 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
-  "summary": "one or two sentences",
+  "summary": "concise recap, maximum three sentences, beginning with 'On this day, you...'",
   "key_takeaways": ["point"],
   "growth_signal": {{
     "type": "education_start|career_goal|new_job|skill_building|aspiration|personal_growth|null",
