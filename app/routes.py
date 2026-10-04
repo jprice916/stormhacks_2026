@@ -116,6 +116,13 @@ def frontend_login():
     return _serve_react_page("login")
 
 
+@main.get("/static/frontend/signup")
+def frontend_signup():
+    if current_user.is_authenticated:
+        return redirect("/static/frontend/profile")
+    return _serve_react_page("signup")
+
+
 @main.get("/static/frontend/profile")
 def frontend_profile():
     return _serve_react_page("profile")
@@ -216,6 +223,45 @@ def api_login():
     ):
         next_url = "/static/frontend/profile"
     return jsonify(ok=True, redirect=next_url)
+
+
+@main.post("/api/signup")
+def api_signup():
+    """Create an account from the React sign-up page and start its session."""
+    if current_user.is_authenticated:
+        return jsonify(ok=True, redirect="/static/frontend/profile")
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(message="Enter a username, email, and matching passwords."), 400
+    username = payload.get("username", "")
+    email = payload.get("email", "")
+    password = payload.get("password", "")
+    confirmation = payload.get("confirmPassword", "")
+    if not all(isinstance(value, str) for value in (username, email, password, confirmation)):
+        return jsonify(message="Enter a username, email, and matching passwords."), 400
+
+    username = username.strip()
+    email = email.strip().lower()
+    if not 3 <= len(username) <= 80:
+        return jsonify(message="Username must be between 3 and 80 characters."), 400
+    if len(email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return jsonify(message="Enter a valid email address."), 400
+    if not 8 <= len(password) <= 128:
+        return jsonify(message="Password must be between 8 and 128 characters."), 400
+    if password != confirmation:
+        return jsonify(message="The passwords do not match."), 400
+
+    try:
+        user = login_service.register_user(username, email, password)
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Account registration could not reach TiDB")
+        return jsonify(message="The sign-up service is unavailable. Please try again."), 503
+    if user is None:
+        return jsonify(message="That username or email is already registered."), 409
+
+    login_user(user)
+    return jsonify(ok=True, redirect="/static/frontend/profile"), 201
 
 
 @main.post("/api/logout")
@@ -407,7 +453,6 @@ def api_journal_summaries():
 
 
 @main.route("/signup", methods=["GET", "POST"])
-@main.route("/static/frontend/signup", methods=["GET", "POST"])
 def signup():
     if current_user.is_authenticated:
         return redirect("/static/frontend/profile")

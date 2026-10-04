@@ -4,11 +4,13 @@ import { LoginPage } from './pages/LoginPage';
 import { MyVideosPage } from './pages/MyVideosPage';
 import { DayRecordingsPage } from './pages/DayRecordingsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { SignupPage } from './pages/SignupPage';
 import { WeeklyScreen } from './pages/WeeklyScreen';
 
 function App() {
   const pathname = window.location.pathname.replace(/\/+$/, '');
   if (pathname.endsWith('/login')) return <LoginPage />;
+  if (pathname.endsWith('/signup')) return <SignupPage />;
   if (pathname.endsWith('/logger')) return <LoggerPage />;
   if (pathname.endsWith('/my-videos')) return <MyVideosPage />;
   if (pathname.endsWith('/recordings')) return <DayRecordingsPage />;

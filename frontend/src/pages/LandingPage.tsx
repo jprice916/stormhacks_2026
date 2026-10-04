@@ -90,12 +90,20 @@ export function LandingPage() {
                 <span className="truncate">{profile.name}</span>
               </a>
             ) : (
-              <a
-                className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5"
-                href="/static/frontend/login"
-              >
-                Sign in
-              </a>
+              <div className="flex items-center gap-3">
+                <a
+                  className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5"
+                  href="/static/frontend/login"
+                >
+                  Sign in
+                </a>
+                <a
+                  className="rounded-full border-2 border-[#473c21] bg-[#473c21] px-4 py-2 text-sm font-medium text-[#f9f6f1] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5"
+                  href="/static/frontend/signup"
+                >
+                  Sign up
+                </a>
+              </div>
             ))}
           </nav>
         </header>
