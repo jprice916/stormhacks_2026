@@ -380,6 +380,14 @@ def save_recording():
         )
     except ValueError as error:
         return jsonify(message=str(error)), 400
+    except MySQLError:
+        current_app.logger.exception("Could not save recording to TiDB")
+        return jsonify(
+            message=(
+                "Could not save the recording to TiDB. Run `flask --app run.py init-db` "
+                "to create the recording tables, then try again."
+            )
+        ), 503
 
     return jsonify(
         stored=True,
