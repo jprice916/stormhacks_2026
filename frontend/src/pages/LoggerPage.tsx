@@ -450,7 +450,9 @@ export function LoggerPage() {
             </div>
           )}
 
-          <p className="mt-4 min-h-6 text-sm leading-6 text-[#887445]" role="status">{status}</p>
+          <p className="mt-4 min-h-6 text-sm leading-6 text-[#887445]" role="status">
+            {journalMode === 'voice' ? status : ''}
+          </p>
 
           {revisit?.suggestion && (
             <aside className="mt-5 border-2 border-[#998350] bg-[#eeebe4] p-4" aria-live="polite">
@@ -463,7 +465,7 @@ export function LoggerPage() {
           )}
 
           {journalMode === 'text' ? (
-            <div className="mt-6 flex justify-center">
+            <div className="mt-6 flex h-16 items-center justify-center">
               <button className="min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50" disabled={isTextSaving} onClick={() => void saveTextJournal()} type="button">{isTextSaving ? 'Saving…' : 'Save journal'}</button>
             </div>
           ) : !isComplete ? (
