@@ -1,27 +1,433 @@
 """HTTP routes for the starter app."""
 
 import os
-from flask import Blueprint, jsonify, render_template, request, send_from_directory
+import re
+import threading
+import time
+import base64
+from datetime import datetime, time as datetime_time, timedelta
+from io import BytesIO
+from pathlib import Path
+
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    url_for,
+)
+from flask_login import current_user, login_required, login_user, logout_user
+from pymysql.err import MySQLError
 from werkzeug.utils import secure_filename
 
+from app.database import get_connection
 from app.models.journal_entry import JournalEntry
+from app.media_logs import (
+    create_database_recording,
+    get_database_recording,
+    get_video_logs_for_user,
+    user_owns_media,
+)
 from app.services.db_service import DatabaseService
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiRequestError, GeminiService
+from app.services.revisit_service import RevisitService
+from app.services.login_service import LoginService
+from app.services.profile_service import (
+    DuplicateUsernameError,
+    InvalidCurrentPasswordError,
+    ProfileService,
+)
 from app.services.stt_service import STTService
 
 main = Blueprint("main", __name__)
 
 gemini_service = GeminiService()
 db_service = DatabaseService()
+revisit_service = RevisitService(db_service, gemini_service)
+LIVE_REFLECTION_COOLDOWN_SECONDS = 15
+LIVE_REFLECTION_MAX_PER_RECORDING = 4
+LIVE_REFLECTION_MIN_WORDS = 10
+live_reflection_limits: dict[str, dict[str, float | int]] = {}
+live_reflection_lock = threading.Lock()
+login_service = LoginService()
+profile_service = ProfileService()
+elevenlabs_service = ElevenLabsService()
 
 # Configure local directory for storing audio/video uploads
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-@main.get("/")
+@main.get("/", endpoint="index")
+@main.get("/weekly", endpoint="weekly")
+@main.get("/profile", endpoint="profile")
+@main.get("/voice-settings", endpoint="voice_settings")
 def index():
-    return render_template("index.html")
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
+    return redirect(url_for("main.logger"))
+
+
+@main.get("/logger")
+@login_required
+def logger():
+    return send_from_directory(current_app.static_folder, "frontend/index.html")
+
+
+@main.get("/my-videos")
+@login_required
+def my_videos():
+    """Temporary library page for the signed-in user's recordings."""
+    try:
+        videos = get_video_logs_for_user(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not load the signed-in user's videos")
+        abort(503)
+    return render_template("my_videos.html", videos=videos)
+
+
+@main.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        frontend_dir = Path(current_app.static_folder) / "frontend"
+        if (frontend_dir / "index.html").is_file():
+            return send_from_directory(frontend_dir, "index.html")
+        return render_template("login.html")
+
+    if request.method == "POST":
+        user = login_service.authenticate(
+            request.form.get("identity", ""),
+            request.form.get("password", ""),
+        )
+        if user:
+            login_user(user, remember=request.form.get("remember") == "on")
+            next_url = request.args.get("next", "")
+            if (
+                next_url.startswith("/")
+                and not next_url.startswith("//")
+                and "\\" not in next_url
+            ):
+                return redirect(next_url)
+            return redirect(url_for("main.profile"))
+        flash("Username/email or password is incorrect.", "error")
+
+    return render_template("login.html")
+
+
+@main.get("/recordings")
+def day_recordings():
+    """Serve the React recordings page for a selected calendar date."""
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
+    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
+    query_string = request.query_string.decode()
+    query_suffix = f"?{query_string}" if query_string else ""
+    return redirect(f"{dev_server.rstrip('/')}/recordings{query_suffix}")
+
+
+@main.post("/api/login")
+def api_login():
+    """Authenticate the React login form and establish a Flask session."""
+    try:
+        user = login_service.authenticate(
+            request.form.get("identity", ""),
+            request.form.get("password", ""),
+        )
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Sign-in could not reach the account database")
+        return jsonify(message="The sign-in service is unavailable. Please check the database connection and try again."), 503
+    if user is None:
+        return jsonify(message="Username/email or password is incorrect."), 401
+
+    login_user(user, remember=request.form.get("remember") == "true")
+    next_url = request.args.get("next", "")
+    if not (
+        next_url.startswith("/")
+        and not next_url.startswith("//")
+        and "\\" not in next_url
+    ):
+        next_url = url_for("main.profile")
+    return jsonify(ok=True, redirect=next_url)
+
+
+@main.post("/api/logout")
+def api_logout():
+    """End the current Flask session for the React profile page."""
+    logout_user()
+    return jsonify(ok=True)
+
+
+def _profile_picture_mime(image: bytes) -> str | None:
+    """Identify supported profile image formats from their file signatures."""
+    if image.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(image) >= 12 and image[:4] == b"RIFF" and image[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@main.get("/api/profile")
+def api_profile():
+    """Return profile fields loaded directly from the signed-in user's database row."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to view your profile."), 401
+    try:
+        profile = profile_service.get_profile(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not load profile from TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    if profile is None:
+        return jsonify(message="This account could not be found."), 404
+
+    image = profile.get("profile_picture")
+    mime_type = _profile_picture_mime(bytes(image)) if image else None
+    avatar_url = None
+    if image and mime_type:
+        avatar_url = f"data:{mime_type};base64,{base64.b64encode(bytes(image)).decode('ascii')}"
+    return jsonify(profile={
+        "name": profile["username"],
+        "email": profile["email"],
+        "avatarUrl": avatar_url,
+    })
+
+
+@main.put("/api/profile")
+def api_update_profile():
+    """Update the authenticated user's username."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to update your profile."), 401
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("name", "")
+    if not isinstance(username, str) or not 3 <= len(username.strip()) <= 80:
+        return jsonify(message="Username must be between 3 and 80 characters."), 400
+    username = username.strip()
+    try:
+        profile_service.update_username(int(current_user.get_id()), username)
+    except DuplicateUsernameError:
+        return jsonify(message="That username is already in use."), 409
+    except MySQLError:
+        current_app.logger.exception("Could not update profile username in TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    return api_profile()
+
+
+@main.post("/api/profile/picture")
+def api_update_profile_picture():
+    """Store a small profile image in the user's TiDB row."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to update your profile picture."), 401
+    picture = request.files.get("picture")
+    if picture is None:
+        return jsonify(message="Choose a PNG, JPG, or WebP picture."), 400
+    image = picture.stream.read(2 * 1024 * 1024 + 1)
+    if not image or len(image) > 2 * 1024 * 1024:
+        return jsonify(message="Choose a picture smaller than 2 MB."), 400
+    if _profile_picture_mime(image) is None:
+        return jsonify(message="Choose a PNG, JPG, or WebP picture."), 400
+    try:
+        profile_service.update_picture(int(current_user.get_id()), image)
+    except MySQLError:
+        current_app.logger.exception("Could not save profile picture in TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    return api_profile()
+
+
+@main.post("/api/profile/password")
+def api_update_password():
+    """Verify the current password and store a hash of the new password."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to change your password."), 401
+    payload = request.get_json(silent=True) or {}
+    current_password = payload.get("currentPassword", "")
+    new_password = payload.get("newPassword", "")
+    if not isinstance(current_password, str) or not isinstance(new_password, str):
+        return jsonify(message="Enter your current and new passwords."), 400
+    if not 8 <= len(new_password) <= 128:
+        return jsonify(message="Your new password must be between 8 and 128 characters."), 400
+    try:
+        profile_service.update_password(int(current_user.get_id()), current_password, new_password)
+    except InvalidCurrentPasswordError:
+        return jsonify(message="Your current password is incorrect."), 401
+    except MySQLError:
+        current_app.logger.exception("Could not update account password in TiDB")
+        return jsonify(message="The profile database is unavailable. Please try again."), 503
+    return jsonify(ok=True)
+
+
+@main.delete("/api/profile")
+def api_delete_profile():
+    """Delete the signed-in user's account and database records."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to delete your account."), 401
+    payload = request.get_json(silent=True) or {}
+    if payload.get("confirmation") != "delete":
+        return jsonify(message='Type "delete" to confirm account removal.'), 400
+    try:
+        deleted = profile_service.delete_account(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not delete account data from TiDB")
+        return jsonify(message="The account could not be deleted. Please try again."), 503
+    if not deleted:
+        return jsonify(message="The account was not found, so nothing was deleted."), 404
+    logout_user()
+    return jsonify(ok=True)
+
+
+@main.get("/api/journal/summaries")
+def api_journal_summaries():
+    """Return the signed-in user's journal summaries for one Sunday-based week."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to view journal summaries."), 401
+
+    week_start_value = request.args.get("week_start", "")
+    try:
+        week_start = datetime.strptime(week_start_value, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify(message="week_start must be a date in YYYY-MM-DD format."), 400
+    if week_start.weekday() != 6:
+        return jsonify(message="week_start must be a Sunday."), 400
+
+    start_at = datetime.combine(week_start, datetime_time.min)
+    end_at = start_at + timedelta(days=7)
+    connection = None
+    try:
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT DATE(created_at) AS entry_date, summary
+                   FROM journal_entries
+                   WHERE user_id = %s AND created_at >= %s AND created_at < %s
+                   ORDER BY created_at, id""",
+                (current_user.get_id(), start_at, end_at),
+            )
+            rows = cursor.fetchall()
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Could not load journal summaries from TiDB")
+        return jsonify(message="Journal summaries could not be loaded from the database."), 503
+    finally:
+        if connection is not None:
+            connection.close()
+
+    summaries_by_date: dict[str, list[str]] = {}
+    for row in rows:
+        summary = row.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            continue
+        date_key = row["entry_date"].isoformat()
+        summaries_by_date.setdefault(date_key, []).append(summary.strip())
+
+    return jsonify(week_start=week_start.isoformat(), summaries=summaries_by_date)
+
+
+@main.route("/signup", methods=["GET", "POST"])
+def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for("main.index"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        confirmation = request.form.get("confirm_password", "")
+
+        if not 3 <= len(username) <= 80:
+            flash("Username must be between 3 and 80 characters.", "error")
+        elif len(email) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            flash("Enter a valid email address.", "error")
+        elif not 8 <= len(password) <= 128:
+            flash("Password must be between 8 and 128 characters.", "error")
+        elif password != confirmation:
+            flash("The passwords do not match.", "error")
+        else:
+            user = login_service.register_user(username, email, password)
+            if user is None:
+                flash("That username or email is already registered.", "error")
+            else:
+                login_user(user)
+                return redirect(url_for("main.profile"))
+
+    return render_template("signup.html")
+
+
+@main.get("/verify-email/<token>")
+def verify_email(token):
+    user = login_service.verify_registration_token(
+        token,
+        current_app.config["SECRET_KEY"],
+    )
+    if user is None:
+        flash("This verification link is invalid, expired, or already used.", "error")
+        return redirect(url_for("main.login"))
+
+    login_user(user)
+    flash("Your email is verified and your account is ready.", "info")
+    return redirect(url_for("main.index"))
+
+
+@main.post("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("You have been signed out.", "info")
+    return redirect(url_for("main.login"))
+
+
+@main.get("/database")
+@login_required
+def database_page():
+    if not current_app.config.get("DATABASE_CONFIGURED"):
+        return render_template("database.html", logs=None, db_status="not_configured"), 503
+
+    try:
+        connection = get_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT logs.id, logs.log_date, logs.media_type, logs.storage_path,
+                              logs.title, logs.notes, users.username
+                       FROM audio_visual_logs AS logs
+                       JOIN users ON users.id = logs.user_id
+                       ORDER BY logs.log_date DESC, logs.id DESC
+                       LIMIT 200"""
+                )
+                logs = cursor.fetchall()
+                cursor.execute(
+                    """SELECT id, username, email, created_at
+                       FROM users
+                       ORDER BY created_at DESC, id DESC
+                       LIMIT 200"""
+                )
+                users = cursor.fetchall()
+        finally:
+            connection.close()
+    except MySQLError as error:
+        error_code = error.args[0] if error.args else None
+        current_app.logger.warning("TiDB read failed (MySQL error code %s)", error_code)
+        db_status = {
+            2002: "endpoint_unreachable",
+            2003: "endpoint_unreachable",
+            2005: "endpoint_unreachable",
+            1044: "database_access_denied",
+            1049: "database_not_found",
+            1045: "authentication_failed",
+            1146: "tables_missing",
+            2026: "tls_failed",
+        }.get(error_code, "unavailable")
+        return render_template("database.html", logs=None, users=None, db_status=db_status), 503
+    except (KeyError, ValueError):
+        return render_template("database.html", logs=None, users=None, db_status="unavailable"), 503
+
+    return render_template("database.html", logs=logs, users=users, db_status="ok")
 
 
 @main.get("/health")
@@ -31,12 +437,12 @@ def health():
 
 @main.post("/api/recordings")
 @main.post("/api/process-log")
-def create_recording():
-    """Accepts recording uploads or text transcripts, processes with Gemini, and saves to TiDB."""
-    user_id = request.form.get("user_id", "demo_user")
+@login_required
+def process_log():
+    """Processes text transcripts through Gemini and saves a journal entry."""
+    user_id = current_user.get_id()
     transcript = request.form.get("transcript")
 
-    # Accept either teammate's "recording" or "audio" form field
     file = request.files.get("recording") or request.files.get("audio")
 
     saved_filename = None
@@ -45,7 +451,6 @@ def create_recording():
         file_path = os.path.join(UPLOAD_FOLDER, saved_filename)
         file.save(file_path)
 
-        # If frontend didn't already send live transcript text, transcribe the saved file
         if not transcript:
             with open(file_path, "rb") as f:
                 transcript = STTService.transcribe_audio_file(f)
@@ -53,13 +458,16 @@ def create_recording():
     if not transcript:
         return jsonify(message="No transcript or valid recording file provided."), 400
 
-    # 1. Parse milestones and core topics via Gemini
-    analysis = gemini_service.analyze_transcript(transcript)
+    try:
+        analysis = gemini_service.analyze_transcript(
+            transcript,
+            current_date=request.form.get("current_local_date"),
+            user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+        )
+        embedding = gemini_service.generate_embedding(transcript)
+    except GeminiRequestError as error:
+        return jsonify(message=str(error), service="gemini"), 503
 
-    # 2. Generate 768-dimensional vector embedding for TiDB
-    embedding = gemini_service.generate_embedding(transcript)
-
-    # 3. Create entry model conforming to the DB schema
     entry = JournalEntry(
         user_id=user_id,
         transcript=transcript,
@@ -67,24 +475,37 @@ def create_recording():
         summary=analysis.get("summary", ""),
         core_topic=analysis.get("core_topic", ""),
         embedding=embedding,
-        video_filename=saved_filename
+        video_filename=saved_filename,
     )
 
-    # 4. Check for matching historical struggle if user logged an achievement
-    past_match = None
-    if entry.entry_type == "achievement":
-        past_match = db_service.find_matching_struggle(user_id, embedding)
+    try:
+        entry_id = db_service.save_entry(entry, analysis)
+    except MySQLError as error:
+        current_app.logger.exception("Could not save journal entry to TiDB")
+        error_code = error.args[0] if error.args else None
+        message = "Could not save the entry to TiDB."
+        if error_code == 1146:
+            message = "The journal tables have not been created in TiDB yet."
+        return jsonify(message=message, database_error_code=error_code), 503
 
-    # 5. Persist entry metadata and vector string to TiDB
-    entry_id = db_service.save_entry(entry)
+    revisit_suggestion = None
+    try:
+        revisit_suggestion = revisit_service.find_suggestion(
+            user_id=user_id,
+            entry_id=entry_id,
+            transcript=transcript,
+            analysis=analysis,
+            embedding=embedding,
+        )
+    except MySQLError:
+        current_app.logger.exception("Could not retrieve or update revisit cues")
 
-    # 6. Return response to React
     return jsonify(
         stored=True,
         entry_id=entry_id,
         filename=saved_filename,
         analysis=analysis,
-        matched_past_struggle=past_match
+        revisit_suggestion=revisit_suggestion,
     ), 200
 
 

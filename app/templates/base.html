@@ -1,16 +1,32 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f4f5f7">
-    <title>{% block title %}Flask Starter{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  </head>
-  <body>
-    <main class="page-shell">
-      {% block content %}{% endblock %}
-    </main>
-    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
-  </body>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f7">
+  <title>{% block title %}Flask Starter{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="{% block body_class %}{% endblock %}">
+  <header class="site-bar">
+    <a class="site-brand"
+      href="{{ url_for('main.index') if current_user.is_authenticated else url_for('main.login') }}">StormHacks</a>
+    {% if current_user.is_authenticated %}
+    <div class="account-controls">
+      <span class="account-name">{{ current_user.username }}</span>
+      <a class="account-link" href="{{ url_for('main.my_videos') }}">My videos</a>
+      <form action="{{ url_for('main.logout') }}" method="post">
+        <button class="signout-button" type="submit">Sign out</button>
+      </form>
+    </div>
+    {% endif %}
+  </header>
+  <main class="page-shell database-shell">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+
 </html>

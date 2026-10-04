@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Create account | StormHacks{% endblock %}
+{% block body_class %}login-page{% endblock %}
+
+{% block content %}
+<section class="login-panel" aria-labelledby="signup-title">
+    <span class="eyebrow">StormHacks 2026</span>
+    <h1 id="signup-title">Create account</h1>
+    <p class="login-intro">Create an account to start recording.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <p class="login-message login-message-{{ category }}" role="alert">{{ message }}</p>
+    {% endfor %}
+    {% endwith %}
+
+    <form class="login-form" method="post" action="{{ url_for('main.signup') }}">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" minlength="3" maxlength="80" autocomplete="username" required
+            autofocus>
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" maxlength="254" autocomplete="email" required>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password"
+            required>
+
+        <label for="confirm-password">Confirm password</label>
+        <input id="confirm-password" name="confirm_password" type="password" minlength="8" maxlength="128"
+            autocomplete="new-password" required>
+
+        <button class="button button-primary login-submit" type="submit">Create account</button>
+    </form>
+    <p class="auth-switch">Already have an account? <a href="{{ url_for('main.login') }}">Sign in</a></p>
+</section>
+{% endblock %}

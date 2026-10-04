@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+@theme {
+  /* 1.5× typography scale for the app-wide Tailwind text utilities. */
+  --font-sans: 'Gaegu', sans-serif;
+  --font-serif: 'Gaegu', sans-serif;
+  --font-mono: 'Gaegu', sans-serif;
+  --text-xs: 1.125rem;
+  --text-sm: 1.3125rem;
+  --text-base: 1.5rem;
+  --text-lg: 1.6875rem;
+  --text-xl: 1.875rem;
+  --text-2xl: 2.25rem;
+  --text-3xl: 2.8125rem;
+  --text-4xl: 3.375rem;
+  --text-5xl: 4.5rem;
+  --text-6xl: 5.625rem;
+  --text-7xl: 6.75rem;
+  --text-8xl: 9rem;
+  --text-9xl: 12rem;
+}
+
+@layer base {
+  :root {
+    --font-gaegu: 'Gaegu', sans-serif;
+    color: #252321;
+    background: #fbfaf8;
+    font-family: var(--font-gaegu);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    font-size: 24px;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+    font-size: inherit;
+  }
+}
