@@ -1,6 +1,7 @@
 """HTTP routes for the starter app."""
 
 from pathlib import Path
+from io import BytesIO
 import base64
 import re
 import json
