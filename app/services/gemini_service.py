@@ -22,8 +22,9 @@ class GeminiService:
         # Set USE_MOCK_GEMINI=true only for offline development; real Gemini is the default.
         self.use_mock = os.getenv("USE_MOCK_GEMINI", "false").lower() == "true"
         self.api_key = os.getenv("JAYS_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
-        self.analysis_model = os.getenv("GEMINI_ANALYSIS_MODEL", "gemini-3.8-flash")
+        self.analysis_model = os.getenv("GEMINI_ANALYSIS_MODEL", "gemini-3.5-flash-lite")
         self.live_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.5-flash-lite")
+        self.embedding_model = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
         self.client = None
         if self.use_mock:
             return
@@ -74,12 +75,13 @@ The transcript comes from speech-to-text and may contain minor typos, missing
 punctuation, or misheard words. Infer intended meaning only when context makes it
 clear. Do not invent, correct, or rely on uncertain details.
 
-Extract a concise weekly recap, topic, emotion, and takeaways. The recap must be at
-most three short sentences, begin with "On this day, you...", and preserve only the
-most meaningful events, decisions, or progress. Identify education starts,
+Create two summaries: a detailed factual summary in 3-5 sentences and a concise
+retrospective recap of at most 3 sentences. The concise recap must begin with
+"On this day, you..." and describe what happened without adding encouragement,
+advice, or facts the user did not state. Also extract a topic, emotion, and takeaways.
+Identify education starts,
 skill learning, career goals, new jobs, achievements, personal growth, and recurring
-struggles. When a user begins a learning path, create 2-4 supportive baseline
-questions at their stated level for future comparison.
+struggles. Do not generate questions in this final analysis.
 
 Extract concrete future classes, birthdays, deadlines, and appointments. Resolve
 relative dates such as tomorrow using the supplied local date and time zone. If
@@ -96,17 +98,16 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
-  "summary": "concise recap, maximum three sentences, beginning with 'On this day, you...'",
+  "summary": "detailed factual summary in 3-5 sentences",
+  "concise_summary": "at most 3 sentences beginning with On this day, you...",
   "key_takeaways": ["point"],
   "growth_signal": {{
     "type": "education_start|career_goal|new_job|skill_building|aspiration|personal_growth|null",
     "topic": "topic or null",
-    "future_revisit_reason": "reason or null",
-    "baseline_questions": [{{"question": "question", "difficulty": "beginner|intermediate|advanced", "purpose": "purpose"}}]
+    "future_revisit_reason": "reason or null"
   }},
   "important_events": [{{"title": "event", "scheduled_for": "YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS or null", "original_time_reference": "exact wording", "reminder_reason": "reminder"}}],
   "future_revisit_cues": [{{"trigger_concepts": ["specific concept"], "trigger": "future milestone", "reason": "why this matters"}}],
-  "reflection_quote": "one supportive sentence",
   "temporal_references": "relative wording or null"
 }}
 
@@ -146,6 +147,14 @@ for ordinary updates, completed thoughts that need no elaboration, routine detai
 repetition, filler, and clear factual statements. Do not ask merely because the
 speaker named a concrete item, event, person, place, or cost. Do not assume emotions.
 
+When the speaker has just started a named course, skill, role, or learning path,
+you may ask one approachable baseline question they can answer aloud now. Match it
+to their stated level and the specific subject. For example, someone beginning a
+computer-science program could be asked a foundational question about a concept
+they are likely to encounter. Ask only one baseline question at a time, and only
+when the new learning path is clear enough to make the question specific. Mark this
+as question_type "baseline"; otherwise use question_type "reflection".
+
 When you do ask a question, make it specific to a concrete detail from this
 checkpoint. Name the event, item, person, place, choice, cost, or goal the speaker
 actually mentioned. Ask one short, natural question. Never use generic wording such
@@ -153,7 +162,7 @@ as "What feels most important" or "What would future you remember" when a concre
 detail is available.
 
 Return ONLY JSON:
-{{"should_prompt": true, "question": "one short optional question or null", "topic": "short label or null"}}
+{{"should_prompt": true, "question": "one short optional question or null", "topic": "short label or null", "question_type": "baseline|reflection|null"}}
 
 <checkpoint>
 {checkpoint}
@@ -168,10 +177,12 @@ Return ONLY JSON:
             parsed = json.loads(response.text or "{}")
             question = parsed.get("question")
             should_prompt = bool(parsed.get("should_prompt") and isinstance(question, str) and question.strip())
+            question_type = parsed.get("question_type")
             return {
                 "should_prompt": should_prompt,
                 "question": question.strip()[:500] if should_prompt else None,
                 "topic": str(parsed.get("topic") or "")[:120] or None,
+                "question_type": question_type if question_type in {"baseline", "reflection"} else None,
             }
         except Exception as error:
             error_text = str(error)
@@ -213,7 +224,6 @@ Return ONLY JSON:
             "trigger": candidate.get("trigger_text"),
             "trigger_concepts": candidate.get("trigger_concepts"),
             "reason": candidate.get("reason"),
-            "baseline_questions": candidate.get("baseline_questions"),
         }
         prompt = f"""
 You decide whether a private diary app should offer one old entry as a revisit.
@@ -275,7 +285,13 @@ Return ONLY JSON:
         if not self.client:
             raise GeminiRequestError("Gemini API key is not configured.")
         try:
-            response = self.client.models.embed_content(model="text-embedding-004", contents=text)
+            from google.genai import types
+
+            response = self.client.models.embed_content(
+                model=self.embedding_model,
+                contents=text,
+                config=types.EmbedContentConfig(output_dimensionality=768),
+            )
             return response.embeddings[0].values
         except Exception as error:
             print(f"[GeminiService] Embedding error: {error}.")
@@ -299,16 +315,16 @@ Return ONLY JSON:
             "core_topic": str(analysis.get("core_topic") or "journal entry")[:200],
             "emotion": str(analysis.get("emotion") or "neutral")[:80],
             "summary": str(analysis.get("summary") or transcript)[:4000],
+            "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:1500],
             "key_takeaways": [str(item)[:500] for item in analysis.get("key_takeaways", []) if isinstance(item, str)][:8],
             "growth_signal": {
                 "type": growth.get("type") if growth.get("type") in {"education_start", "career_goal", "new_job", "skill_building", "aspiration", "personal_growth"} else None,
                 "topic": growth.get("topic") or None,
                 "future_revisit_reason": growth.get("future_revisit_reason") or None,
-                "baseline_questions": records(growth.get("baseline_questions"), "question", 4),
+                "baseline_questions": [],
             },
             "important_events": records(analysis.get("important_events"), "title", 10),
             "future_revisit_cues": records(analysis.get("future_revisit_cues"), "trigger", 8),
-            "reflection_quote": str(analysis.get("reflection_quote") or "")[:500],
             "temporal_references": analysis.get("temporal_references") or None,
         }
 
@@ -318,11 +334,11 @@ Return ONLY JSON:
             "core_topic": "voice journal log",
             "emotion": "neutral",
             "summary": transcript or "Hands-free entry log",
+            "concise_summary": "On this day, you recorded a voice journal entry.",
             "key_takeaways": ["User completed a vocal entry check-in."],
             "growth_signal": {"type": None, "topic": None, "future_revisit_reason": None, "baseline_questions": []},
             "important_events": [],
             "future_revisit_cues": [],
-            "reflection_quote": "Consistent reflection turns small moments into milestones.",
             "temporal_references": None,
         }
 

@@ -11,7 +11,7 @@ class JournalEntry:
     embedding: List[float] # 768-dim float vector from Gemini
     video_filename: Optional[str] = None
     id: Optional[int] = None
-    created_at: Optional[str] = None
+    created_at: Optional[object] = None
 
     def to_db_dict(self) -> dict:
         """Serializes entry into primitive types ready for SQL execution."""
@@ -22,5 +22,6 @@ class JournalEntry:
             "summary": self.summary,
             "core_topic": self.core_topic,
             "embedding": str(self.embedding),  # TiDB vector expects string: "[0.12, -0.04, ...]"
-            "video_filename": self.video_filename
+            "video_filename": self.video_filename,
+            "created_at": self.created_at,
         }

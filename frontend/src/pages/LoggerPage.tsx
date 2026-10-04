@@ -9,6 +9,7 @@ type LiveResponse = {
   should_prompt?: boolean;
   question?: string | null;
   topic?: string | null;
+  question_type?: 'baseline' | 'reflection' | null;
   error?: string;
   details?: string;
   rate_limited?: boolean;
@@ -118,6 +119,8 @@ export function LoggerPage() {
   const [reflection, setReflection] = useState<string | null>(null);
   const [reflectionProgress, setReflectionProgress] = useState(0);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
+  const [analysisPreview, setAnalysisPreview] = useState<Record<string, unknown> | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const clearSilenceTimer = useCallback(() => {
     if (pauseTimerRef.current !== null) {
@@ -397,6 +400,7 @@ export function LoggerPage() {
     setIsPaused(false);
     setIsComplete(false);
     setIsSaved(false);
+    setAnalysisPreview(null);
     clearSilenceTimer();
     dismissReflection();
     setRevisit(undefined);
@@ -447,6 +451,7 @@ export function LoggerPage() {
     setPlaybackUrl('');
     setIsComplete(false);
     setIsSaved(false);
+    setAnalysisPreview(null);
     setStatus('Camera ready. Select Record when you are ready to speak.');
   }, [clearSilenceTimer, dismissReflection]);
 
@@ -461,6 +466,7 @@ export function LoggerPage() {
     formData.append('current_local_date', new Date().toLocaleDateString('en-CA'));
     formData.append('user_time_zone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Vancouver');
     if (transcript) formData.append('transcript', transcript);
+    if (analysisPreview) formData.append('analysis_preview', JSON.stringify(analysisPreview));
 
     try {
       const response = await fetch('/api/recordings', { method: 'POST', body: formData });
@@ -484,6 +490,35 @@ export function LoggerPage() {
     }
     setIsSaving(false);
     setIsSaved(true);
+  }, [analysisPreview]);
+
+  const generateFinalAnalysis = useCallback(async () => {
+    const transcript = `${fullTranscriptRef.current} ${interimTranscriptRef.current}`.replace(/\s+/g, ' ').trim();
+    if (!transcript) {
+      setStatus('Speak during the recording so there is a transcript to analyze.');
+      return;
+    }
+    setIsAnalyzing(true);
+    setStatus('Generating final analysis preview…');
+    try {
+      const response = await fetch('/api/recordings/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          current_local_date: new Date().toLocaleDateString('en-CA'),
+          user_time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Vancouver',
+        }),
+      });
+      const result = await readResponse<RecordingResponse>(response);
+      if (!response.ok || !result.analysis) throw new Error(result.message || 'Could not generate final analysis.');
+      setAnalysisPreview(result.analysis);
+      setStatus('Final analysis is ready. Complete & save when you want to upload this recording.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not generate final analysis.');
+    } finally {
+      setIsAnalyzing(false);
+    }
   }, []);
 
   const dismissRevisit = useCallback(async () => {
@@ -509,6 +544,7 @@ export function LoggerPage() {
     const formData = new FormData();
     formData.append('transcript', transcript);
     formData.append('current_local_date', new Date().toLocaleDateString('en-CA'));
+    formData.append('recorded_at_local', localTimestamp());
     formData.append('user_time_zone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Vancouver');
     try {
       const response = await fetch('/api/process-log', { method: 'POST', body: formData });
@@ -659,9 +695,16 @@ export function LoggerPage() {
           ) : (
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button className="min-h-12 border-2 border-[#998350] px-6 py-3 text-sm font-medium hover:bg-[#eeebe4]" disabled={isSaving} onClick={resetForRetry} type="button">Retry</button>
-              <button className="min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSaving || isSaved} onClick={() => void uploadRecording()} type="button">{isSaving ? 'Saving…' : isSaved ? 'Saved' : 'Complete'}</button>
+              <button className="min-h-12 border-2 border-[#998350] bg-[#eeebe4] px-6 py-3 text-sm font-medium hover:bg-[#ddd5c3] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSaving || isSaved || isAnalyzing} onClick={() => void generateFinalAnalysis()} type="button">{isAnalyzing ? 'Generating…' : analysisPreview ? 'Regenerate analysis' : 'Generate final analysis'}</button>
+              <button className="min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50" disabled={isSaving || isSaved || isAnalyzing} onClick={() => void uploadRecording()} type="button">{isSaving ? 'Saving…' : isSaved ? 'Saved' : 'Complete & save'}</button>
               <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{formatDuration(elapsedMs)} / {formatDuration(MAX_RECORDING_MS)}</time>
             </div>
+          )}
+          {analysisPreview && (
+            <details className="mt-5 border-2 border-[#998350] bg-[#eeebe4] p-4" open>
+              <summary className="cursor-pointer text-sm font-medium text-[#473c21]">Final analysis preview</summary>
+              <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5 text-[#473c21]">{JSON.stringify(analysisPreview, null, 2)}</pre>
+            </details>
           )}
           <button
             className="absolute bottom-3 right-4 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21] disabled:no-underline disabled:opacity-50 sm:bottom-4 sm:right-6"

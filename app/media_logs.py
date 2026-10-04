@@ -124,9 +124,16 @@ def get_video_logs_for_user(user_id: int, recording_date: date | None = None) ->
             query = """SELECT logs.id, logs.user_id, logs.log_date, logs.media_type,
                               logs.storage_path, logs.title, logs.notes, logs.created_at,
                               media.mime_type, media.original_filename,
-                              media.file_size_bytes, media.chunk_count
+                              media.file_size_bytes, media.chunk_count,
+                              entries.entry_type, entries.core_topic, entries.emotion,
+                              entries.summary AS analysis_summary, entries.transcript,
+                              entries.reflection_quote AS concise_summary,
+                              entries.key_takeaways, entries.temporal_references
                        FROM audio_visual_logs AS logs
                        JOIN recording_media AS media ON media.log_id = logs.id
+                       LEFT JOIN journal_entries AS entries
+                         ON entries.user_id = CAST(logs.user_id AS CHAR)
+                        AND entries.video_filename = logs.title
                        WHERE logs.user_id = %s
                          AND logs.media_type IN ('audio', 'video', 'audio_video')"""
             params: list = [user_id]

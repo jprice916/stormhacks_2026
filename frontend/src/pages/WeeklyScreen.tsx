@@ -3,6 +3,7 @@ import { Agent } from '../components/Agent/Agent';
 import { AgentSidebar } from '../components/Agent/AgentSidebar';
 import { Bubble } from '../components/Bubble/Bubble';
 import { Carousel } from '../components/Carousel/Carousel';
+import { loadProfile } from '../data/profileApi';
 import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
 import { frontendPaths } from '../lib/paths';
 
@@ -32,6 +33,7 @@ export function WeeklyScreen() {
   const [isLoadingSummaries, setIsLoadingSummaries] = useState(true);
   const [summariesError, setSummariesError] = useState('');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Audio / TTS state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -42,6 +44,18 @@ export function WeeklyScreen() {
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const weekPickerRef = useRef<HTMLInputElement>(null);
   const closeAgentSidebar = useCallback(() => setIsAgentSidebarOpen(false), []);
+
+  useEffect(() => {
+    let active = true;
+    loadProfile()
+      .then((profile) => {
+        if (active) setAvatarUrl(profile.avatarUrl);
+      })
+      .catch(() => {
+        if (active) setAvatarUrl(null);
+      });
+    return () => { active = false; };
+  }, []);
 
   // Fetch summaries from DB backend whenever the selected week changes
   useEffect(() => {
@@ -212,15 +226,15 @@ export function WeeklyScreen() {
   return (
     <>
       <main
-        className="min-h-screen bg-[#fbfaf8] px-5 pb-10 pt-7 text-stone-800 sm:px-10 sm:pb-14 sm:pt-10"
+        className="h-screen overflow-hidden bg-[#fbfaf8] px-5 py-7 text-stone-800 sm:px-10 sm:py-10"
         inert={isAgentSidebarOpen}
       >
-        <div className="mx-auto flex min-h-[calc(100vh-4.25rem)] max-w-7xl flex-col">
-          <header className="flex items-center justify-between">
+        <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col">
+          <header className="relative z-20 flex items-center justify-between">
             <div className="relative">
               <button
                 aria-label="Choose a week"
-                className="font-serif text-xl italic tracking-wide transition-colors hover:text-[#887445] focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700 sm:text-2xl"
+                className="cursor-pointer font-serif text-xl italic tracking-wide transition-colors hover:text-[#887445] focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700 sm:text-2xl"
                 onClick={() => {
                   const picker = weekPickerRef.current;
                   if (!picker) return;
@@ -232,7 +246,7 @@ export function WeeklyScreen() {
                 }}
                 type="button"
               >
-                Week of {formatDate(new Date(weekYear, weekMonth - 1, weekDay))}
+                Week of {formatDate(new Date(weekYear, weekMonth - 1, weekDay))} {' >'}
               </button>
               <input
                 aria-label="Choose a date in the week"
@@ -245,19 +259,23 @@ export function WeeklyScreen() {
             </div>
             <a
               aria-label="Open profile"
-              className="flex h-12 w-12 items-center justify-center rounded-full border border-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700"
+              className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700"
               href={frontendPaths.profile}
             >
-              <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
-                <circle cx="16" cy="16" r="13" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M10 19c1.4 2.1 3.4 3.2 6 3.2s4.6-1.1 6-3.2M11 12.5h.1M21 12.5h.1" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
-              </svg>
+              {avatarUrl ? (
+                <img alt="Your profile" className="h-full w-full object-cover" src={avatarUrl} />
+              ) : (
+                <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
+                  <circle cx="16" cy="16" r="13" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M10 19c1.4 2.1 3.4 3.2 6 3.2s4.6-1.1 6-3.2M11 12.5h.1M21 12.5h.1" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+                </svg>
+              )}
             </a>
           </header>
 
           <section
             aria-label="Weekly highlights"
-            className="flex flex-1 items-center py-8 sm:py-10 lg:flex-none lg:shrink-0"
+            className="relative -top-8 flex shrink-0 items-center py-4 sm:py-6"
           >
             <Carousel
               initialIndex={activeIndex}
@@ -274,7 +292,7 @@ export function WeeklyScreen() {
 
           <section
             aria-label="Agent update"
-            className="mx-auto flex w-full max-w-5xl items-end gap-4 pt-4 sm:gap-6 lg:mt-auto"
+            className="mx-auto flex w-full max-w-5xl items-end gap-4 pt-0 sm:-mt-12 sm:gap-6"
           >
             <Agent
               buttonRef={agentButtonRef}

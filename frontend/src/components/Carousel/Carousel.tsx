@@ -14,14 +14,14 @@ export function Carousel({ items, initialIndex, onActiveChange, onItemClick }: C
   }
 
   return (
-    <div className="h-[22rem] w-full sm:h-[28rem]">
+    <div className="relative left-1/2 h-[24rem] w-[calc(100vw-1.5rem)] max-w-[110rem] -translate-x-1/2 sm:h-[32rem] sm:w-[calc(100vw-3rem)]">
       <CircularCarousel
         aspectRatio={1}
         autoplay="off"
-        cardWidth={275}
+        cardWidth={360}
         draggable
         focusOnClick
-        gap={64}
+        gap={120}
         initialIndex={initialIndex}
         items={items}
         onChange={onActiveChange}

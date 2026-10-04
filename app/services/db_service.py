@@ -35,14 +35,15 @@ class DatabaseService:
                     """INSERT INTO journal_entries
                        (user_id, transcript, entry_type, core_topic, emotion, summary,
                         key_takeaways, reflection_question, reflection_quote,
-                        temporal_references, embedding, video_filename)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        temporal_references, embedding, video_filename, created_at)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         payload["user_id"], payload["transcript"], payload["entry_type"],
                         payload["core_topic"], analysis.get("emotion", "neutral"), payload["summary"],
                         json.dumps(analysis.get("key_takeaways", [])), None,
-                        analysis.get("reflection_quote"), analysis.get("temporal_references"),
+                        analysis.get("concise_summary"), analysis.get("temporal_references"),
                         payload["embedding"], payload["video_filename"],
+                        payload["created_at"] or datetime.now(),
                     ),
                 )
                 entry_id = cursor.lastrowid
@@ -73,7 +74,6 @@ class DatabaseService:
                             "trigger": growth.get("type"),
                             "trigger_concepts": [growth.get("topic")] if growth.get("topic") else [],
                             "reason": growth.get("future_revisit_reason"),
-                            "baseline_questions": growth.get("baseline_questions", []),
                         },
                     )
             connection.commit()

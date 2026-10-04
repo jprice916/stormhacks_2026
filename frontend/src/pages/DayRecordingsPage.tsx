@@ -17,6 +17,8 @@ type Recording = {
   original_filename: string;
   file_size_bytes: number | string;
   chunk_count: number;
+  analysis?: Record<string, unknown> | null;
+  transcript?: string | null;
 };
 
 type RecordingsResponse = {
@@ -115,6 +117,7 @@ export function DayRecordingsPage() {
   }, [date]);
 
   const formattedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? formatSelectedDate(date) : 'Selected day';
+  const latestTranscript = recordings[0]?.transcript?.trim();
 
   return (
     <main className="min-h-screen bg-[#fbfaf8] px-5 py-8 text-stone-800 sm:px-10 sm:py-12">
@@ -132,6 +135,14 @@ export function DayRecordingsPage() {
             <p className="text-sm uppercase tracking-[0.18em] text-stone-500">Journal summary</p>
             <h2 className="mt-2 font-serif text-2xl" id="day-summary-title">Your day, in full</h2>
             <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-stone-700">{daySummary}</p>
+          </section>
+        )}
+
+        {latestTranscript && (
+          <section className="mb-8 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="latest-transcript-title">
+            <p className="text-sm uppercase tracking-[0.18em] text-stone-500">Most recent recording</p>
+            <h2 className="mt-2 font-serif text-2xl" id="latest-transcript-title">Transcript</h2>
+            <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-stone-700">{latestTranscript}</p>
           </section>
         )}
 
@@ -161,6 +172,14 @@ export function DayRecordingsPage() {
                   preload="metadata"
                   src={`${recording.recording_url}?playback=${recording.id}-${Date.parse(recording.recorded_at)}`}
                 />
+              )}
+              {recording.analysis && (
+                <details className="mt-5 border-t border-stone-200 pt-4">
+                  <summary className="cursor-pointer text-sm font-medium text-stone-700">Analysis JSON</summary>
+                  <pre className="mt-3 max-h-96 overflow-auto rounded-lg bg-stone-950 p-4 text-xs leading-5 text-stone-100">
+                    {JSON.stringify(recording.analysis, null, 2)}
+                  </pre>
+                </details>
               )}
             </article>
           ))}

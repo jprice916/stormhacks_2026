@@ -348,7 +348,8 @@ def api_journal_summaries():
         connection = get_connection()
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT DATE(created_at) AS entry_date, summary
+                """SELECT DATE(created_at) AS entry_date, summary,
+                          reflection_quote AS concise_summary
                    FROM journal_entries
                    WHERE user_id = %s AND created_at >= %s AND created_at < %s
                    ORDER BY created_at, id""",
@@ -370,11 +371,13 @@ def api_journal_summaries():
             continue
         date_key = row["entry_date"].isoformat()
         summary_clean = summary.strip()
+        concise_summary = row.get("concise_summary")
+        concise_clean = concise_summary.strip() if isinstance(concise_summary, str) and concise_summary.strip() else summary_clean
         summaries_by_date.setdefault(date_key, []).append({
-            "concise_summary": summary_clean,
+            "concise_summary": concise_clean,
             "full_summary": summary_clean,
         })
-        legacy_summaries_by_date.setdefault(date_key, []).append(summary_clean)
+        legacy_summaries_by_date.setdefault(date_key, []).append(concise_clean)
 
     return jsonify(
         week_start=week_start.isoformat(),
@@ -488,6 +491,37 @@ def database_page():
 @main.get("/health")
 def health():
     return jsonify(status="ok")
+
+
+def _entry_created_at(recorded_at_value: str | None, local_date_value: str | None) -> datetime:
+    """Use a supplied presentation date, falling back to the real save time."""
+    try:
+        return datetime.fromisoformat(recorded_at_value or "")
+    except ValueError:
+        pass
+    try:
+        return datetime.combine(datetime.strptime(local_date_value or "", "%Y-%m-%d").date(), datetime.now().time())
+    except ValueError:
+        return datetime.now()
+
+
+@main.post("/api/recordings/analyze")
+@login_required
+def preview_recording_analysis():
+    """Generate a final analysis preview without storing a recording or journal entry."""
+    payload = request.get_json(silent=True) or {}
+    transcript = str(payload.get("transcript") or "").strip()
+    if not transcript:
+        return jsonify(message="A transcript is needed before final analysis can be generated."), 400
+    try:
+        analysis = gemini_service.analyze_transcript(
+            transcript,
+            current_date=payload.get("current_local_date"),
+            user_time_zone=payload.get("user_time_zone", "America/Vancouver"),
+        )
+    except GeminiRequestError as error:
+        return jsonify(message=str(error), service="gemini"), 503
+    return jsonify(analysis=analysis)
 
 
 @main.get("/health/db")
@@ -612,6 +646,7 @@ def process_log():
         core_topic=analysis.get("core_topic", ""),
         embedding=embedding,
         video_filename=saved_filename,
+        created_at=_entry_created_at(request.form.get("recorded_at_local"), request.form.get("current_local_date")),
     )
 
     try:
@@ -675,6 +710,22 @@ def _list_recordings():
                 analysis = json.loads(analysis)
             except (json.JSONDecodeError, TypeError):
                 analysis = None
+        if not isinstance(analysis, dict) and video.get("analysis_summary"):
+            takeaways = video.get("key_takeaways") or []
+            if isinstance(takeaways, str):
+                try:
+                    takeaways = json.loads(takeaways)
+                except json.JSONDecodeError:
+                    takeaways = []
+            analysis = {
+                "entry_type": video.get("entry_type"),
+                "core_topic": video.get("core_topic"),
+                "emotion": video.get("emotion"),
+                "summary": video.get("analysis_summary"),
+                "concise_summary": video.get("concise_summary"),
+                "key_takeaways": takeaways if isinstance(takeaways, list) else [],
+                "temporal_references": video.get("temporal_references"),
+            }
 
         response_videos.append({
             "id": video.get("id"),
@@ -692,6 +743,7 @@ def _list_recordings():
             "analysis": analysis if isinstance(analysis, dict) else None,
             "analysis_status": video.get("analysis_status"),
             "analysis_error": video.get("analysis_error"),
+            "transcript": video.get("transcript") or None,
             "transcript_available": bool(video.get("transcript")),
         })
 
@@ -750,11 +802,18 @@ def save_recording():
     entry_id = None
     if transcript:
         try:
-            analysis = gemini_service.analyze_transcript(
-                transcript,
-                current_date=request.form.get("current_local_date"),
-                user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
-            )
+            preview_value = request.form.get("analysis_preview")
+            if preview_value:
+                preview = json.loads(preview_value)
+                if not isinstance(preview, dict):
+                    raise ValueError("Analysis preview must be a JSON object.")
+                analysis = gemini_service._normalize(preview, transcript)
+            else:
+                analysis = gemini_service.analyze_transcript(
+                    transcript,
+                    current_date=request.form.get("current_local_date"),
+                    user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+                )
             embedding = gemini_service.generate_embedding(transcript)
             entry_kwargs = {
                 "user_id": str(user_id),
@@ -764,6 +823,7 @@ def save_recording():
                 "core_topic": analysis.get("core_topic", ""),
                 "embedding": embedding,
                 "video_filename": original_name,
+                "created_at": logged_at,
             }
             try:
                 entry = JournalEntry(recording_log_id=log_id, **entry_kwargs)

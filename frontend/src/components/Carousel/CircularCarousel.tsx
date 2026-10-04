@@ -943,7 +943,10 @@ const CircularCarousel = ({
     const card = (event.target as HTMLElement).closest?.('[data-cc-index]');
     if (!card) return;
     const index = Number(card.getAttribute('data-cc-index'));
-    if (focusOnClick) focusIndex(index);
+    if (index !== activeRef.current) {
+      if (focusOnClick) focusIndex(index);
+      return;
+    }
     onItemClick?.(list[index], index);
   };
 
