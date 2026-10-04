@@ -122,10 +122,14 @@ def get_video_logs_for_user(user_id: int) -> list[dict]:
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT id, log_date, storage_path, title, notes
-                   FROM audio_visual_logs
-                   WHERE user_id = %s AND media_type IN ('video', 'audio_video')
-                   ORDER BY log_date DESC, id DESC""",
+                """SELECT logs.id, logs.log_date, logs.storage_path, logs.title, logs.notes,
+                          entries.analysis_json
+                   FROM audio_visual_logs AS logs
+                   LEFT JOIN journal_entries AS entries
+                     ON entries.recording_log_id = logs.id
+                    AND entries.user_id = logs.user_id
+                   WHERE logs.user_id = %s AND logs.media_type IN ('video', 'audio_video')
+                   ORDER BY logs.log_date DESC, logs.id DESC""",
                 (user_id,),
             )
             return cursor.fetchall()

@@ -10,6 +10,7 @@ class JournalEntry:
     core_topic: str
     embedding: List[float] # 768-dim float vector from Gemini
     video_filename: Optional[str] = None
+    recording_log_id: Optional[int] = None
     id: Optional[int] = None
     created_at: Optional[str] = None
 
@@ -22,5 +23,6 @@ class JournalEntry:
             "summary": self.summary,
             "core_topic": self.core_topic,
             "embedding": str(self.embedding),  # TiDB vector expects string: "[0.12, -0.04, ...]"
-            "video_filename": self.video_filename
+            "video_filename": self.video_filename,
+            "recording_log_id": self.recording_log_id,
         }

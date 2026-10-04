@@ -575,15 +575,22 @@ def _list_recordings():
         current_app.logger.exception("Could not list recordings from TiDB")
         return jsonify(message="Could not load recordings from TiDB."), 503
 
-    return jsonify(videos=[
-        {
+    response_videos = []
+    for video in videos:
+        analysis = video.get("analysis_json")
+        if isinstance(analysis, str):
+            try:
+                analysis = json.loads(analysis)
+            except json.JSONDecodeError:
+                analysis = None
+        response_videos.append({
             "id": video["id"],
             "filename": video["title"] or "Recorded video",
             "recorded_at": video["log_date"].isoformat(),
             "recording_url": video["storage_path"],
-        }
-        for video in videos
-    ])
+            "analysis": analysis if isinstance(analysis, dict) else None,
+        })
+    return jsonify(videos=response_videos)
 
 
 @main.route("/api/recordings", methods=["GET", "POST"])
@@ -632,12 +639,45 @@ def save_recording():
             )
         ), 503
 
+    analysis = None
+    entry_id = None
+    analysis_error = None
+    transcript = request.form.get("transcript", "").strip()
+    if transcript:
+        try:
+            analysis = gemini_service.analyze_transcript(
+                transcript,
+                current_date=request.form.get("current_local_date"),
+                user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+            )
+            embedding = gemini_service.generate_embedding(transcript)
+            entry_id = db_service.save_entry(
+                JournalEntry(
+                    user_id=current_user.get_id(),
+                    transcript=transcript,
+                    entry_type=analysis.get("entry_type", "general"),
+                    summary=analysis.get("summary", ""),
+                    core_topic=analysis.get("core_topic", ""),
+                    embedding=embedding,
+                    video_filename=original_name,
+                    recording_log_id=log_id,
+                ),
+                analysis,
+            )
+        except (GeminiRequestError, MySQLError) as error:
+            current_app.logger.exception("Could not save final recording analysis")
+            analysis = None
+            analysis_error = str(error)
+
     return jsonify(
         stored=True,
         log_id=log_id,
         filename=original_name,
         recording_url=url_for("main.serve_recording", log_id=log_id),
         logged_at=logged_at.isoformat(),
+        analysis=analysis,
+        entry_id=entry_id,
+        analysis_error=analysis_error,
     ), 201
 
 

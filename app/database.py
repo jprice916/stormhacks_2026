@@ -110,9 +110,12 @@ def initialize_database() -> None:
             temporal_references TEXT,
             embedding JSON,
             video_filename VARCHAR(255),
+            recording_log_id BIGINT UNSIGNED NULL,
+            analysis_json JSON NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX ix_journal_entries_user_created (user_id, created_at),
-            INDEX ix_journal_entries_topic (core_topic)
+            INDEX ix_journal_entries_topic (core_topic),
+            INDEX ix_journal_entries_recording_log (recording_log_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         """CREATE TABLE IF NOT EXISTS important_events (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -157,11 +160,14 @@ def initialize_database() -> None:
                 "ALTER TABLE revisit_cues ADD COLUMN last_suggested_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN last_dismissed_at DATETIME NULL",
                 "ALTER TABLE revisit_cues ADD COLUMN shown_count INT UNSIGNED NOT NULL DEFAULT 0",
+                "ALTER TABLE journal_entries ADD COLUMN recording_log_id BIGINT UNSIGNED NULL",
+                "ALTER TABLE journal_entries ADD COLUMN analysis_json JSON NULL",
+                "ALTER TABLE journal_entries ADD INDEX ix_journal_entries_recording_log (recording_log_id)",
             ):
                 try:
                     cursor.execute(statement)
                 except MySQLError as error:
-                    if error.args and error.args[0] != 1060:  # Duplicate column
+                    if error.args and error.args[0] not in {1060, 1061}:  # Duplicate column or index
                         raise
             cursor.execute("ALTER TABLE users MODIFY COLUMN profile_picture LONGBLOB NULL")
         connection.commit()

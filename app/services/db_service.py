@@ -35,14 +35,16 @@ class DatabaseService:
                     """INSERT INTO journal_entries
                        (user_id, transcript, entry_type, core_topic, emotion, summary,
                         key_takeaways, reflection_question, reflection_quote,
-                        temporal_references, embedding, video_filename)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        temporal_references, embedding, video_filename, recording_log_id,
+                        analysis_json)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         payload["user_id"], payload["transcript"], payload["entry_type"],
                         payload["core_topic"], analysis.get("emotion", "neutral"), payload["summary"],
                         json.dumps(analysis.get("key_takeaways", [])), None,
                         analysis.get("reflection_quote"), analysis.get("temporal_references"),
                         payload["embedding"], payload["video_filename"],
+                        payload["recording_log_id"], json.dumps(analysis),
                     ),
                 )
                 entry_id = cursor.lastrowid

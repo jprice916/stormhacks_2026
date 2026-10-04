@@ -5,6 +5,22 @@ type VideoRecord = {
   filename: string;
   recorded_at: string;
   recording_url: string;
+  analysis: FinalAnalysis | null;
+};
+
+type FinalAnalysis = {
+  entry_type?: string;
+  core_topic?: string;
+  emotion?: string;
+  summary?: string;
+  key_takeaways?: string[];
+  reflection_quote?: string;
+  important_events?: Array<{ title?: string; scheduled_for?: string | null }>;
+  growth_signal?: {
+    type?: string | null;
+    topic?: string | null;
+    baseline_questions?: Array<{ question?: string }>;
+  };
 };
 
 async function readJson(response: Response) {
@@ -45,10 +61,26 @@ export function MyVideosPage() {
       {!message && videos.length === 0 && <p>No saved videos yet.</p>}
 
       {videos.map((video) => (
-        <section key={video.id}>
+        <section key={video.id} style={{ borderTop: '1px solid #ccc', display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '16px 0' }}>
+          <div>
           <h2>{video.filename}</h2>
           <p>{new Date(video.recorded_at).toLocaleString()}</p>
-          <video controls playsInline preload="auto" src={`${video.recording_url}?playback=${video.id}-${Date.parse(video.recorded_at)}`} />
+          <video controls playsInline preload="auto" src={`${video.recording_url}?playback=${video.id}-${Date.parse(video.recorded_at)}`} style={{ maxWidth: '100%', width: '360px' }} />
+          </div>
+          <div style={{ flex: '1 1 280px' }}>
+            <h3>Final analysis</h3>
+            {video.analysis ? (
+              <>
+                <p><strong>Topic:</strong> {video.analysis.core_topic || '—'}</p>
+                <p><strong>Type:</strong> {video.analysis.entry_type || '—'} · <strong>Emotion:</strong> {video.analysis.emotion || '—'}</p>
+                <p>{video.analysis.summary || 'No summary returned.'}</p>
+                {!!video.analysis.key_takeaways?.length && <><strong>Takeaways</strong><ul>{video.analysis.key_takeaways.map((takeaway, index) => <li key={index}>{takeaway}</li>)}</ul></>}
+                {video.analysis.growth_signal?.type && <p><strong>Growth signal:</strong> {video.analysis.growth_signal.topic || video.analysis.growth_signal.type}</p>}
+                {!!video.analysis.important_events?.length && <><strong>Important events</strong><ul>{video.analysis.important_events.map((event, index) => <li key={index}>{event.title}{event.scheduled_for ? ` — ${event.scheduled_for}` : ''}</li>)}</ul></>}
+                {video.analysis.reflection_quote && <p><em>{video.analysis.reflection_quote}</em></p>}
+              </>
+            ) : <p>No final analysis was saved for this recording.</p>}
+          </div>
         </section>
       ))}
     </main>
