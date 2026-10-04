@@ -63,7 +63,7 @@ export function LandingPage() {
               </a>
               <a
                 className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:px-5"
-                href="/login"
+                href="/static/frontend/login"
               >
                 Sign in
               </a>
@@ -84,7 +84,7 @@ export function LandingPage() {
               <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a
                   className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
-                  href="/login"
+                  href="/static/frontend/login"
                 >
                   Sign in to get started
                   <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
