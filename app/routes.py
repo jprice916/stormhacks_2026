@@ -1,10 +1,12 @@
 """HTTP routes for the starter app."""
 
+import base64
+import io
+import json
 import os
 import re
 import threading
 import time
-import base64
 from datetime import datetime, time as datetime_time, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -44,6 +46,7 @@ from app.services.profile_service import (
     ProfileService,
 )
 from app.services.stt_service import STTService
+from app.services.elevenlabs_service import ElevenLabsService
 
 main = Blueprint("main", __name__)
 
@@ -64,21 +67,63 @@ UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
+def _serve_react_page(page: str = ""):
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
+    page_url = f"/static/frontend/{page}" if page else "/static/frontend/"
+    query_string = request.query_string.decode()
+    query_suffix = f"?{query_string}" if query_string else ""
+    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
+    return redirect(f"{dev_server.rstrip('/')}{page_url}{query_suffix}")
+
+
 @main.get("/", endpoint="index")
 @main.get("/weekly", endpoint="weekly")
 @main.get("/profile", endpoint="profile")
 @main.get("/voice-settings", endpoint="voice_settings")
 def index():
-    frontend_dir = Path(current_app.static_folder) / "frontend"
-    if (frontend_dir / "index.html").is_file():
-        return send_from_directory(frontend_dir, "index.html")
-    return redirect(url_for("main.logger"))
+    return _serve_react_page()
 
 
-@main.get("/logger")
-@login_required
+@main.get("/logger", endpoint="logger")
 def logger():
-    return send_from_directory(current_app.static_folder, "frontend/index.html")
+    return _serve_react_page("logger")
+
+
+@main.get("/static/frontend/")
+def frontend_home():
+    return _serve_react_page()
+
+
+@main.get("/static/frontend/login")
+def frontend_login():
+    return _serve_react_page("login")
+
+
+@main.get("/static/frontend/profile")
+def frontend_profile():
+    return _serve_react_page("profile")
+
+
+@main.get("/static/frontend/weekly")
+def frontend_weekly():
+    return _serve_react_page("weekly")
+
+
+@main.get("/static/frontend/logger")
+def frontend_logger():
+    return _serve_react_page("logger")
+
+
+@main.get("/static/frontend/my-videos")
+def frontend_my_videos():
+    return _serve_react_page("my-videos")
+
+
+@main.get("/static/frontend/recordings")
+def frontend_recordings():
+    return _serve_react_page("recordings")
 
 
 @main.get("/my-videos")
@@ -115,7 +160,7 @@ def login():
                 and "\\" not in next_url
             ):
                 return redirect(next_url)
-            return redirect(url_for("main.profile"))
+            return redirect("/static/frontend/profile")
         flash("Username/email or password is incorrect.", "error")
 
     return render_template("login.html")
@@ -124,13 +169,7 @@ def login():
 @main.get("/recordings")
 def day_recordings():
     """Serve the React recordings page for a selected calendar date."""
-    frontend_dir = Path(current_app.static_folder) / "frontend"
-    if (frontend_dir / "index.html").is_file():
-        return send_from_directory(frontend_dir, "index.html")
-    dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
-    query_string = request.query_string.decode()
-    query_suffix = f"?{query_string}" if query_string else ""
-    return redirect(f"{dev_server.rstrip('/')}/recordings{query_suffix}")
+    return _serve_react_page("recordings")
 
 
 @main.post("/api/login")
@@ -143,7 +182,12 @@ def api_login():
         )
     except (MySQLError, KeyError, ValueError):
         current_app.logger.exception("Sign-in could not reach the account database")
-        return jsonify(message="The sign-in service is unavailable. Please check the database connection and try again."), 503
+        return (
+            jsonify(
+                message="The sign-in service is unavailable. Please check the database connection and try again."
+            ),
+            503,
+        )
     if user is None:
         return jsonify(message="Username/email or password is incorrect."), 401
 
@@ -154,7 +198,7 @@ def api_login():
         and not next_url.startswith("//")
         and "\\" not in next_url
     ):
-        next_url = url_for("main.profile")
+        next_url = "/static/frontend/profile"
     return jsonify(ok=True, redirect=next_url)
 
 
@@ -318,21 +362,32 @@ def api_journal_summaries():
         if connection is not None:
             connection.close()
 
-    summaries_by_date: dict[str, list[str]] = {}
+    summaries_by_date: dict[str, list[dict[str, str]]] = {}
+    legacy_summaries_by_date: dict[str, list[str]] = {}
     for row in rows:
         summary = row.get("summary")
         if not isinstance(summary, str) or not summary.strip():
             continue
         date_key = row["entry_date"].isoformat()
-        summaries_by_date.setdefault(date_key, []).append(summary.strip())
+        summary_clean = summary.strip()
+        summaries_by_date.setdefault(date_key, []).append({
+            "concise_summary": summary_clean,
+            "full_summary": summary_clean,
+        })
+        legacy_summaries_by_date.setdefault(date_key, []).append(summary_clean)
 
-    return jsonify(week_start=week_start.isoformat(), summaries=summaries_by_date)
+    return jsonify(
+        week_start=week_start.isoformat(),
+        entries_by_date=summaries_by_date,
+        summaries=legacy_summaries_by_date,
+    )
 
 
 @main.route("/signup", methods=["GET", "POST"])
+@main.route("/static/frontend/signup", methods=["GET", "POST"])
 def signup():
     if current_user.is_authenticated:
-        return redirect(url_for("main.index"))
+        return redirect("/static/frontend/profile")
 
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -354,7 +409,7 @@ def signup():
                 flash("That username or email is already registered.", "error")
             else:
                 login_user(user)
-                return redirect(url_for("main.profile"))
+                return redirect("/static/frontend/profile")
 
     return render_template("signup.html")
 
@@ -367,11 +422,11 @@ def verify_email(token):
     )
     if user is None:
         flash("This verification link is invalid, expired, or already used.", "error")
-        return redirect(url_for("main.login"))
+        return redirect("/static/frontend/login")
 
     login_user(user)
     flash("Your email is verified and your account is ready.", "info")
-    return redirect(url_for("main.index"))
+    return redirect("/static/frontend/profile")
 
 
 @main.post("/logout")
@@ -379,7 +434,7 @@ def verify_email(token):
 def logout():
     logout_user()
     flash("You have been signed out.", "info")
-    return redirect(url_for("main.login"))
+    return redirect("/static/frontend/login")
 
 
 @main.get("/database")
@@ -435,7 +490,88 @@ def health():
     return jsonify(status="ok")
 
 
-@main.post("/api/recordings")
+@main.get("/health/db")
+def database_health():
+    """Check whether the configured database accepts a connection."""
+    if not current_app.config.get("DATABASE_CONFIGURED"):
+        return jsonify(status="not_configured"), 503
+    try:
+        connection = get_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+        finally:
+            connection.close()
+        return jsonify(status="ok")
+    except (MySQLError, KeyError, ValueError):
+        return jsonify(status="unavailable"), 503
+
+
+@main.post("/api/tts")
+def text_to_speech():
+    """Generates an MP3 audio stream for the given text using ElevenLabs."""
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get("text") or "").strip()
+
+    if not text:
+        return jsonify(message="No text provided for speech synthesis."), 400
+
+    try:
+        audio_bytes = elevenlabs_service.synthesize(text)
+        return send_file(
+            io.BytesIO(audio_bytes),
+            mimetype="audio/mpeg",
+            as_attachment=False,
+        )
+    except Exception as error:
+        current_app.logger.exception("ElevenLabs synthesis error")
+        return jsonify(message=str(error)), 500
+
+
+@main.post("/api/live-reflection")
+def live_reflection():
+    """Rate-limit optional live prompts while the user is recording."""
+    payload = request.get_json(silent=True) or {}
+    user_id = str(payload.get("user_id") or "demo_user")
+    recording_id = str(payload.get("recording_id") or "default")
+    limit_key = f"{user_id}:{recording_id}"
+    checkpoint = str(payload.get("checkpoint") or "").strip()
+    if len(checkpoint.split()) < LIVE_REFLECTION_MIN_WORDS:
+        return jsonify(should_prompt=False, question=None, topic=None)
+
+    now = time.monotonic()
+    with live_reflection_lock:
+        state = live_reflection_limits.get(limit_key, {"last_request": 0.0, "count": 0})
+        if now - float(state["last_request"]) < LIVE_REFLECTION_COOLDOWN_SECONDS:
+            return jsonify(
+                should_prompt=False,
+                question=None,
+                topic=None,
+                limited=True,
+                cooldown_seconds=round(
+                    LIVE_REFLECTION_COOLDOWN_SECONDS - (now - float(state["last_request"])), 1
+                ),
+            )
+        if int(state["count"]) >= LIVE_REFLECTION_MAX_PER_RECORDING:
+            return jsonify(
+                should_prompt=False,
+                question=None,
+                topic=None,
+                limited=True,
+                cooldown_seconds=0,
+                reason="recording_prompt_limit_reached",
+            )
+        state["last_request"] = now
+        live_reflection_limits[limit_key] = state
+
+    result = gemini_service.analyze_live_reflection(checkpoint)
+    result["model"] = "mock" if gemini_service.use_mock else gemini_service.live_model
+    if result["should_prompt"]:
+        with live_reflection_lock:
+            live_reflection_limits[limit_key]["count"] = int(live_reflection_limits[limit_key]["count"]) + 1
+    return jsonify(result)
+
+
 @main.post("/api/process-log")
 @login_required
 def process_log():
@@ -507,6 +643,188 @@ def process_log():
         analysis=analysis,
         revisit_suggestion=revisit_suggestion,
     ), 200
+
+
+def _list_recordings():
+    """Return the signed-in user's TiDB-backed recordings for the React debug page."""
+    date_value = request.args.get("date")
+    recording_date = None
+    if date_value:
+        try:
+            recording_date = datetime.strptime(date_value, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify(message="Use a date in YYYY-MM-DD format."), 400
+
+    user_id = int(current_user.get_id())
+    try:
+        videos = get_video_logs_for_user(user_id, recording_date)
+    except MySQLError:
+        current_app.logger.exception("Could not list recordings from TiDB")
+        return jsonify(message="Could not load recordings from TiDB."), 503
+
+    def _to_iso(val):
+        if val is None:
+            return None
+        return val.isoformat() if hasattr(val, "isoformat") else str(val)
+
+    response_videos = []
+    for video in videos:
+        analysis = video.get("analysis_json")
+        if isinstance(analysis, str):
+            try:
+                analysis = json.loads(analysis)
+            except (json.JSONDecodeError, TypeError):
+                analysis = None
+
+        response_videos.append({
+            "id": video.get("id"),
+            "user_id": video.get("user_id", user_id),
+            "log_date": _to_iso(video.get("log_date")),
+            "media_type": video.get("media_type"),
+            "storage_path": video.get("storage_path"),
+            "title": video.get("title"),
+            "notes": video.get("notes"),
+            "created_at": _to_iso(video.get("created_at")),
+            "filename": video.get("title") or "Recorded video",
+            "recorded_at": _to_iso(video.get("log_date")),
+            "recording_url": video.get("storage_path"),
+            "mime_type": video.get("mime_type", "video/webm"),
+            "analysis": analysis if isinstance(analysis, dict) else None,
+            "analysis_status": video.get("analysis_status"),
+            "analysis_error": video.get("analysis_error"),
+            "transcript_available": bool(video.get("transcript")),
+        })
+
+    return jsonify(videos=response_videos)
+
+
+@main.route("/api/recordings", methods=["GET", "POST"])
+@login_required
+def save_recording():
+    """Store a media file and its user-linked metadata entirely in TiDB."""
+    if request.method == "GET":
+        return _list_recordings()
+
+    recording = request.files.get("recording")
+    if recording is None or not recording.filename:
+        return jsonify(message="Choose a recording before saving."), 400
+
+    if not recording.mimetype.startswith(("audio/", "video/")):
+        return jsonify(message="Only audio or video recording files are supported."), 415
+
+    original_name = secure_filename(recording.filename) or "webcam-recording.webm"
+    user_id = int(current_user.get_id())
+    try:
+        duration_seconds = request.form.get("duration_seconds", type=int)
+        recorded_at_value = request.form.get("recorded_at_local", "")
+        try:
+            recorded_at_local = datetime.fromisoformat(recorded_at_value)
+        except ValueError:
+            recorded_at_local = datetime.now().astimezone().replace(tzinfo=None)
+        log_id, logged_at = create_database_recording(
+            user_id,
+            recording.stream,
+            mime_type=recording.mimetype,
+            original_filename=original_name,
+            duration_seconds=duration_seconds,
+            recorded_at_local=recorded_at_local,
+            user_time_zone=request.form.get("user_time_zone"),
+            recording_url_factory=lambda record_id: url_for(
+                "main.serve_recording", log_id=record_id
+            ),
+        )
+    except ValueError as error:
+        return jsonify(message=str(error)), 400
+    except MySQLError:
+        current_app.logger.exception("Could not save recording to TiDB")
+        return jsonify(
+            message=(
+                "Could not save the recording to TiDB. Run `flask --app run.py init-db` "
+                "to create the recording tables, then try again."
+            )
+        ), 503
+
+    transcript = request.form.get("transcript", "").strip()
+    analysis = None
+    revisit_suggestion = None
+    entry_id = None
+    if transcript:
+        try:
+            analysis = gemini_service.analyze_transcript(
+                transcript,
+                current_date=request.form.get("current_local_date"),
+                user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+            )
+            embedding = gemini_service.generate_embedding(transcript)
+            entry_kwargs = {
+                "user_id": str(user_id),
+                "transcript": transcript,
+                "entry_type": analysis.get("entry_type", "general"),
+                "summary": analysis.get("summary", ""),
+                "core_topic": analysis.get("core_topic", ""),
+                "embedding": embedding,
+                "video_filename": original_name,
+            }
+            try:
+                entry = JournalEntry(recording_log_id=log_id, **entry_kwargs)
+            except TypeError:
+                entry = JournalEntry(**entry_kwargs)
+
+            entry_id = db_service.save_entry(entry, analysis)
+            revisit_suggestion = revisit_service.find_suggestion(
+                user_id=str(user_id),
+                entry_id=entry_id,
+                transcript=transcript,
+                analysis=analysis,
+                embedding=embedding,
+            )
+        except Exception:
+            current_app.logger.exception("Could not analyze recording transcript")
+
+    return jsonify(
+        stored=True,
+        log_id=log_id,
+        filename=original_name,
+        recording_url=url_for("main.serve_recording", log_id=log_id),
+        logged_at=logged_at.isoformat(),
+        analysis=analysis,
+        transcript=transcript or None,
+        entry_id=entry_id,
+        revisit_suggestion=revisit_suggestion,
+    ), 201
+
+
+@main.get("/recordings/<int:log_id>")
+@login_required
+def serve_recording(log_id: int):
+    """Stream a recording from TiDB only to the user who owns it."""
+    try:
+        recording = get_database_recording(int(current_user.get_id()), log_id)
+    except (MySQLError, ValueError):
+        current_app.logger.exception("Could not read recording %s from TiDB", log_id)
+        abort(503)
+    if recording is None:
+        abort(404)
+    return send_file(
+        BytesIO(recording["data"]),
+        mimetype=recording["mime_type"],
+        download_name=recording["original_filename"],
+        conditional=True,
+        max_age=0,
+    )
+
+
+@main.post("/api/revisit-cues/<int:cue_id>/dismiss")
+def dismiss_revisit(cue_id: int):
+    """Record that a user dismissed a revisit suggestion."""
+    payload = request.get_json(silent=True) or {}
+    user_id = str(payload.get("user_id") or "demo_user")
+    try:
+        dismissed = db_service.mark_revisit_dismissed(cue_id, user_id)
+    except MySQLError:
+        current_app.logger.exception("Could not dismiss revisit cue")
+        return jsonify(message="Could not dismiss revisit suggestion."), 503
+    return jsonify(dismissed=dismissed)
 
 
 @main.get("/uploads/<filename>")

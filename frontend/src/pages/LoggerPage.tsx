@@ -3,7 +3,6 @@ import { frontendPaths } from '../lib/paths';
 
 const MAX_RECORDING_MS = 5 * 60 * 1000;
 const LIVE_COOLDOWN_SECONDS = 15;
-const MIN_CHECKPOINT_WORDS = 10;
 const REFLECTION_DISPLAY_MS = 10_000;
 
 type LiveResponse = {
@@ -22,6 +21,8 @@ type RecordingResponse = {
   recording_url?: string;
   transcript?: string;
   analysis?: Record<string, unknown>;
+  analysis_status?: 'queued' | 'skipped';
+  analysis_error?: string;
   revisit_suggestion?: {
     cue_id?: number;
     suggestion?: string;
@@ -95,8 +96,10 @@ export function LoggerPage() {
   const timerRef = useRef<number | null>(null);
   const maxTimerRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
   const checkpointIntervalRef = useRef<number | null>(null);
   const reflectionTimerRef = useRef<number | null>(null);
+  const aiAudioRef = useRef<HTMLAudioElement | null>(null);
   const requestReflectionRef = useRef<(trigger: string) => void>(() => undefined);
 
   const [cameraState, setCameraState] = useState<'loading' | 'ready' | 'error' | 'unsupported'>('loading');
@@ -111,16 +114,30 @@ export function LoggerPage() {
   const [isTextSaving, setIsTextSaving] = useState(false);
   const [status, setStatus] = useState('Requesting camera and microphone access…');
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
   const [reflection, setReflection] = useState<string | null>(null);
   const [reflectionProgress, setReflectionProgress] = useState(0);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
 
+  const clearSilenceTimer = useCallback(() => {
+    if (pauseTimerRef.current !== null) {
+      window.clearTimeout(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
+    if (countdownIntervalRef.current !== null) {
+      window.clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setSilenceCountdown(null);
+  }, []);
+
   const clearRecordingTimers = useCallback(() => {
-    [timerRef, maxTimerRef, pauseTimerRef, checkpointIntervalRef].forEach((timer) => {
+    clearSilenceTimer();
+    [timerRef, maxTimerRef, checkpointIntervalRef].forEach((timer) => {
       if (timer.current !== null) window.clearInterval(timer.current);
       timer.current = null;
     });
-  }, []);
+  }, [clearSilenceTimer]);
 
   const updateElapsedTime = useCallback(() => {
     const elapsed = elapsedMsRef.current + (isPausedRef.current ? 0 : Date.now() - activeSegmentStartedAtRef.current);
@@ -132,8 +149,33 @@ export function LoggerPage() {
       window.clearInterval(reflectionTimerRef.current);
       reflectionTimerRef.current = null;
     }
+    if (aiAudioRef.current) {
+      aiAudioRef.current.pause();
+      aiAudioRef.current = null;
+    }
     setReflection(null);
     setReflectionProgress(0);
+  }, []);
+
+  const playPromptAudio = useCallback((text: string) => {
+    fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+      .then((res) => (res.ok ? res.blob() : null))
+      .then((blob) => {
+        if (blob && isRecordingRef.current) {
+          if (aiAudioRef.current) aiAudioRef.current.pause();
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          aiAudioRef.current = audio;
+          audio.play().catch(() => {
+            // Audio autoplay policy fallback
+          });
+        }
+      })
+      .catch((error) => console.error('TTS prompt audio failed:', error));
   }, []);
 
   const showReflection = useCallback((question: string) => {
@@ -151,7 +193,8 @@ export function LoggerPage() {
     setReflection(question);
     updateProgress();
     reflectionTimerRef.current = window.setInterval(updateProgress, 100);
-  }, []);
+    playPromptAudio(question);
+  }, [playPromptAudio]);
 
   const startCamera = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
@@ -185,18 +228,24 @@ export function LoggerPage() {
   const requestReflection = useCallback(async (trigger: string) => {
     if (!isRecordingRef.current || isPausedRef.current || promptCountRef.current >= 4 || rateLimitedRef.current) return;
     const remainingCooldown = nextRequestAtRef.current - Date.now();
-    if (remainingCooldown > 0) {
-      return;
-    }
+    if (remainingCooldown > 0) return;
 
     const words = fullTranscriptRef.current.trim().split(/\s+/).filter(Boolean);
-    const checkpointWords = words.slice(lastCheckpointLengthRef.current);
-    if (checkpointWords.length < MIN_CHECKPOINT_WORDS) {
-      return;
-    }
+    const totalWords = words.length;
+    const newWords = totalWords - lastCheckpointLengthRef.current;
 
-    lastCheckpointLengthRef.current = words.length;
-    const payload = { recording_id: recordingIdRef.current, trigger, checkpoint: checkpointWords.join(' ') };
+    // Require at least some speech and new input since the last prompt
+    if (totalWords < 8 || newWords < 2) return;
+
+    lastCheckpointLengthRef.current = totalWords;
+    // Provide recent context (up to 30 words) so backend receives >= 10 words
+    const recentWords = words.slice(Math.max(0, totalWords - 30));
+    const payload = {
+      recording_id: recordingIdRef.current,
+      trigger,
+      checkpoint: recentWords.join(' '),
+    };
+
     startCooldown(LIVE_COOLDOWN_SECONDS);
 
     try {
@@ -236,22 +285,24 @@ export function LoggerPage() {
     setIsRecording(false);
     setIsPaused(false);
     setElapsedMs(Math.min(elapsedMsRef.current, MAX_RECORDING_MS));
-    if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
-    if (checkpointIntervalRef.current !== null) window.clearInterval(checkpointIntervalRef.current);
-    if (timerRef.current !== null) window.clearInterval(timerRef.current);
-    if (maxTimerRef.current !== null) window.clearTimeout(maxTimerRef.current);
+    clearRecordingTimers();
+
+    if (aiAudioRef.current) {
+      aiAudioRef.current.pause();
+      aiAudioRef.current = null;
+    }
 
     try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
     recognitionRef.current = null;
     if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
     durationRef.current = Math.round(elapsedMsRef.current / 1000);
     recordedAtRef.current = localTimestamp();
-  }, []);
+  }, [clearRecordingTimers]);
 
   const startSpeechRecognition = useCallback(() => {
     const Constructor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Constructor) {
-      setStatus('Live browser transcription is unavailable; the recording will be transcribed after it ends.');
+      setStatus('Live browser transcription is unavailable, so this recording cannot receive a final analysis.');
       return;
     }
     const recognition = new Constructor();
@@ -259,7 +310,7 @@ export function LoggerPage() {
     recognition.interimResults = true;
     recognition.lang = 'en-US';
     recognition.onresult = (event) => {
-      if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
+      clearSilenceTimer();
       interimTranscriptRef.current = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         if (event.results[index].isFinal) fullTranscriptRef.current += `${event.results[index][0].transcript} `;
@@ -267,19 +318,44 @@ export function LoggerPage() {
       }
       const transcript = `${fullTranscriptRef.current} ${interimTranscriptRef.current}`.trim();
       setStatus(transcript ? `Live transcript: “${transcript}”` : 'Listening…');
-      pauseTimerRef.current = window.setTimeout(() => requestReflectionRef.current('3-second pause'), 3000);
+
+      // 3-second silence counter before taking the checkpoint
+      let secondsRemaining = 3;
+      setSilenceCountdown(3);
+
+      countdownIntervalRef.current = window.setInterval(() => {
+        secondsRemaining -= 1;
+        if (secondsRemaining > 0) {
+          setSilenceCountdown(secondsRemaining);
+        } else {
+          if (countdownIntervalRef.current !== null) {
+            window.clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+          setSilenceCountdown(null);
+        }
+      }, 1000);
+
+      pauseTimerRef.current = window.setTimeout(() => {
+        if (countdownIntervalRef.current !== null) {
+          window.clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+        setSilenceCountdown(null);
+        requestReflectionRef.current('3-second pause');
+      }, 3000);
     };
     recognition.onerror = (event) => {
       if (event.error !== 'no-speech') setStatus(`Live transcription error: ${event.error}`);
     };
     recognition.onend = () => {
       if (isRecordingRef.current && !isPausedRef.current) {
-        try { recognition.start(); } catch { /* restart is already pending */ }
+        try { recognition.start(); } catch { /* restart is pending */ }
       }
     };
     recognitionRef.current = recognition;
-    try { recognition.start(); } catch { /* browser may already be starting recognition */ }
-  }, []);
+    try { recognition.start(); } catch { /* start pending */ }
+  }, [clearSilenceTimer]);
 
   const pauseOrResumeRecording = useCallback(() => {
     const recorder = recorderRef.current;
@@ -290,13 +366,14 @@ export function LoggerPage() {
       isPausedRef.current = true;
       setIsPaused(true);
       setElapsedMs(elapsedMsRef.current);
+      clearSilenceTimer();
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
       if (maxTimerRef.current !== null) window.clearTimeout(maxTimerRef.current);
-      if (pauseTimerRef.current !== null) window.clearTimeout(pauseTimerRef.current);
       if (checkpointIntervalRef.current !== null) window.clearInterval(checkpointIntervalRef.current);
       try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
       recognitionRef.current = null;
       if (recorder.state === 'recording') recorder.pause();
+      if (aiAudioRef.current) aiAudioRef.current.pause();
       setStatus('Recording paused. Select Resume when you are ready.');
       return;
     }
@@ -310,7 +387,7 @@ export function LoggerPage() {
     maxTimerRef.current = window.setTimeout(stopRecording, Math.max(0, MAX_RECORDING_MS - elapsedMsRef.current));
     checkpointIntervalRef.current = window.setInterval(() => requestReflectionRef.current('20-second interval'), 20_000);
     setStatus('Recording video and listening to your voice. Select Stop recording when finished.');
-  }, [startSpeechRecognition, stopRecording, updateElapsedTime]);
+  }, [clearSilenceTimer, startSpeechRecognition, stopRecording, updateElapsedTime]);
 
   const startRecording = useCallback(() => {
     if (!streamRef.current) return;
@@ -320,6 +397,7 @@ export function LoggerPage() {
     setIsPaused(false);
     setIsComplete(false);
     setIsSaved(false);
+    clearSilenceTimer();
     dismissReflection();
     setRevisit(undefined);
     fullTranscriptRef.current = '';
@@ -358,10 +436,11 @@ export function LoggerPage() {
       requestReflectionRef.current('20-second interval');
     }, 20_000);
     setStatus('Recording video and listening to your voice. Select Stop recording when finished.');
-  }, [dismissReflection, startSpeechRecognition, stopRecording, updateElapsedTime]);
+  }, [clearSilenceTimer, dismissReflection, startSpeechRecognition, stopRecording, updateElapsedTime]);
 
   const resetForRetry = useCallback(() => {
     dismissReflection();
+    clearSilenceTimer();
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     objectUrlRef.current = null;
     blobRef.current = null;
@@ -369,7 +448,7 @@ export function LoggerPage() {
     setIsComplete(false);
     setIsSaved(false);
     setStatus('Camera ready. Select Record when you are ready to speak.');
-  }, [dismissReflection]);
+  }, [clearSilenceTimer, dismissReflection]);
 
   const uploadRecording = useCallback(async () => {
     if (!blobRef.current) return;
@@ -389,7 +468,15 @@ export function LoggerPage() {
       if (!response.ok) throw new Error(result.message || 'Failed to save the recording.');
       if (result.recording_url) setPlaybackUrl(result.recording_url);
       setRevisit(result.revisit_suggestion);
-      setStatus(transcript ? `“${transcript}”` : (result.transcript || 'Recording saved.'));
+      setStatus(
+        result.analysis_status === 'queued'
+          ? 'Video saved. Final analysis is processing automatically.'
+          : result.analysis_error
+            ? `Video saved. Final analysis was skipped: ${result.analysis_error}`
+            : result.analysis
+              ? 'Video and final analysis saved.'
+              : (transcript ? `“${transcript}”` : (result.transcript || 'Recording saved.')),
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not save the recording.');
       setIsSaving(false);
@@ -440,6 +527,7 @@ export function LoggerPage() {
     return () => {
       clearRecordingTimers();
       if (reflectionTimerRef.current !== null) window.clearInterval(reflectionTimerRef.current);
+      if (aiAudioRef.current) aiAudioRef.current.pause();
       try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -454,15 +542,7 @@ export function LoggerPage() {
       <div className="mx-auto max-w-4xl">
         <header className="flex items-center justify-between border-b border-[#ddd5c3] pb-6">
           <a className="font-serif text-xl italic tracking-wide" href={frontendPaths.home}>Week by week</a>
-          <nav aria-label="Logger navigation" className="flex items-center gap-4">
-            <a
-              className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
-              href={frontendPaths.weekly}
-            >
-              My weeks
-            </a>
-            <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href={frontendPaths.myVideos}>My videos</a>
-          </nav>
+          <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href={frontendPaths.myVideos}>My videos</a>
         </header>
 
         <section className="relative mt-10 border-2 border-[#473c21] bg-[#f9f6f1] p-5 shadow-[7px_7px_0_#b39e6c] sm:p-8" aria-labelledby="recorder-title">
@@ -475,13 +555,40 @@ export function LoggerPage() {
               {isComplete && <video className="h-full w-full bg-stone-900 object-contain" controls playsInline ref={recordedVideoRef} src={playbackUrl || undefined} />}
               {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
               {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
+
+              {/* 3-second STT pause countdown badge */}
+              {isRecording && !isPaused && silenceCountdown !== null && (
+                <div className="absolute right-4 top-4 z-20 flex items-center gap-2 rounded-full border-2 border-[#473c21] bg-[#f9f6f1]/95 px-3.5 py-1.5 text-xs font-semibold text-[#473c21] shadow-[3px_3px_0_#b39e6c] backdrop-blur-sm animate-pulse">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  </span>
+                  <span>AI listening in <strong className="font-mono text-sm">{silenceCountdown}s</strong></span>
+                </div>
+              )}
+
+              {/* Active AI Reflection card */}
               {reflection && (
-                <aside className="absolute bottom-11 right-4 z-10 max-w-[min(20rem,calc(100%-2rem))] cursor-pointer border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite" onClick={dismissReflection} role="button" tabIndex={0}>
+                <aside
+                  className="absolute bottom-11 right-4 z-10 max-w-[min(22rem,calc(100%-2rem))] cursor-pointer border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]"
+                  aria-live="polite"
+                  onClick={dismissReflection}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div className="flex items-center justify-between gap-5">
-                    <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
-                    <span aria-label="Question disappears in about ten seconds" className="h-5 w-5 shrink-0 rounded-full" style={{ background: `conic-gradient(#887445 ${reflectionProgress * 360}deg, #ddd5c3 0deg)` }} />
+                    <span className="flex items-center gap-1.5 text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">
+                      <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" />
+                      AI Thought
+                    </span>
+                    <span
+                      aria-label="Question disappears in about ten seconds"
+                      className="h-5 w-5 shrink-0 rounded-full"
+                      style={{ background: `conic-gradient(#887445 ${reflectionProgress * 360}deg, #ddd5c3 0deg)` }}
+                    />
                   </div>
-                  <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
+                  <p className="mt-2 font-serif text-base italic leading-5">“{reflection}”</p>
+                  <p className="mt-2 text-[0.65rem] text-[#887445]">Tap to dismiss</p>
                 </aside>
               )}
             </div>
@@ -498,7 +605,13 @@ export function LoggerPage() {
           )}
 
           <p className="mt-4 h-6 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6 text-[#887445]" role="status">
-            {journalMode === 'voice' ? status : ''}
+            {journalMode === 'voice' ? (
+              silenceCountdown !== null ? (
+                <span className="font-medium text-[#473c21]">
+                  Pause detected ({silenceCountdown}s) · {status}
+                </span>
+              ) : status
+            ) : ''}
           </p>
 
           {revisit?.suggestion && (
