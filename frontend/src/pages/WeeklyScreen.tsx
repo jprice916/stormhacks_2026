@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Agent } from '../components/Agent/Agent';
 import { AgentSidebar } from '../components/Agent/AgentSidebar';
 import { Bubble } from '../components/Bubble/Bubble';
 import { Carousel } from '../components/Carousel/Carousel';
-import { weeklyPreviewEntries, weeklyPreviewItems } from '../data/weeklyPreview';
+import { loadWeeklyTakeaways, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
 
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
@@ -14,26 +14,58 @@ export function WeeklyScreen() {
   const [selectedDate, setSelectedDate] = useState('2026-10-02');
   const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
   const [weekStartLabel, setWeekStartLabel] = useState('September 27');
+  const [takeawaysByDate, setTakeawaysByDate] = useState<Record<string, string[]>>({});
+  const [isLoadingTakeaways, setIsLoadingTakeaways] = useState(true);
+  const [takeawaysError, setTakeawaysError] = useState('');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const weekPickerRef = useRef<HTMLInputElement>(null);
   const closeAgentSidebar = useCallback(() => setIsAgentSidebarOpen(false), []);
 
+  useEffect(() => {
+    let active = true;
+    setTakeawaysByDate({});
+    setIsLoadingTakeaways(true);
+    setTakeawaysError('');
+    loadWeeklyTakeaways(weekStartDate)
+      .then((takeaways) => { if (active) setTakeawaysByDate(takeaways); })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setTakeawaysByDate({});
+        setTakeawaysError(error instanceof Error
+          ? error.message
+          : 'Journal highlights could not be loaded.');
+      })
+      .finally(() => { if (active) setIsLoadingTakeaways(false); });
+    return () => { active = false; };
+  }, [weekStartDate]);
+
   const [weekYear, weekMonth, weekDay] = weekStartDate.split('-').map(Number);
-  const datedEntries = weeklyPreviewEntries.map((entry, index) => {
+  const datedEntries = weekDayNames.map((day, index) => {
     // The carousel is Monday through Sunday, while weekStartDate is Sunday.
     const dayOffset = index === 6 ? 0 : index + 1;
     const date = new Date(weekYear, weekMonth - 1, weekDay + dayOffset);
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return {
-      ...entry,
+      day,
+      dateKey,
       dateLabel: formatDate(date),
+      takeaways: takeawaysByDate[dateKey] ?? [],
     };
   });
-  const carouselItems = weeklyPreviewItems.map((item, index) => {
+  const carouselItems = weeklyCarouselTemplates.map((item, index) => {
     const entry = datedEntries[index];
-    const status = entry.hasData ? 'Data available' : 'No data';
+    const status = isLoadingTakeaways
+      ? 'Checking journal…'
+      : takeawaysError
+        ? 'Highlights unavailable'
+        : entry.takeaways.length
+          ? `${entry.takeaways.length} takeaway${entry.takeaways.length === 1 ? '' : 's'}`
+          : 'Nothing happened';
     return {
       ...item,
+      src: `${import.meta.env.BASE_URL}assets/${entry.takeaways.length ? 'data-state.svg' : 'empty-state.svg'}`,
+      alt: entry.takeaways.length ? `${entry.day} with journal takeaways` : `${entry.day} with no journal takeaways`,
       subtitle: `${entry.dateLabel} · ${status}`,
     };
   });
@@ -110,8 +142,14 @@ export function WeeklyScreen() {
               onClick={() => setIsAgentSidebarOpen(true)}
             />
             <Bubble
-              heading={`On ${activeEntry.day}, ${activeEntry.dateLabel}, you ${activeEntry.hasData ? 'achieved…' : 'had a quiet day…'}`}
-              text={activeEntry.message}
+              heading={`Journal highlights · ${activeEntry.day}, ${activeEntry.dateLabel}`}
+              text={takeawaysError
+                ? takeawaysError
+                : isLoadingTakeaways
+                  ? 'Checking this day…'
+                  : activeEntry.takeaways.length
+                    ? activeEntry.takeaways.join(' · ')
+                    : 'Nothing happened.'}
             />
           </section>
         </div>
