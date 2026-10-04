@@ -122,7 +122,7 @@ export function WeeklyScreen() {
             <a
               aria-label="Open profile"
               className="flex h-12 w-12 items-center justify-center rounded-full border border-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-stone-700"
-              href="profile"
+              href="/profile"
             >
               <svg aria-hidden="true" className="h-7 w-7" fill="none" viewBox="0 0 32 32">
                 <circle cx="16" cy="16" r="13" stroke="currentColor" strokeWidth="1.5" />
@@ -138,7 +138,7 @@ export function WeeklyScreen() {
               onItemClick={(_item, index) => {
                 const entry = datedEntries[index];
                 if (entry) {
-                  window.location.assign(`/static/frontend/recordings?date=${encodeURIComponent(entry.dateKey)}`);
+                  window.location.assign(`/recordings?date=${encodeURIComponent(entry.dateKey)}`);
                 }
               }}
             />

@@ -236,7 +236,7 @@ export function ProfilePage() {
 
   function closeDeleteDialog() {
     if (deleteState === 'success') {
-      window.location.assign('/static/frontend/login');
+      window.location.assign('/login');
       return;
     }
     setIsDeleteOpen(false);
@@ -329,7 +329,7 @@ export function ProfilePage() {
     setLogoutError('');
     try {
       await logoutUser();
-      window.location.assign('/static/frontend/login');
+      window.location.assign('/login');
     } catch (error) {
       setLogoutError(error instanceof Error
         ? error.message
@@ -355,7 +355,7 @@ export function ProfilePage() {
             <span>Week by week</span>
           </a>
           <nav aria-label="Main navigation" className="profile-navigation">
-            <a href="weekly">My weeks</a>
+            <a href="/weekly">My weeks</a>
             <span aria-current="page" className="profile-current-page">Profile</span>
             <button className="profile-button profile-button--quiet profile-button--small" disabled={isLoggingOut} onClick={handleLogout} type="button">
               {isLoggingOut ? 'Signing out…' : 'Log out'}
