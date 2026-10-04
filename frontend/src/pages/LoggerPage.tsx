@@ -454,7 +454,15 @@ export function LoggerPage() {
       <div className="mx-auto max-w-4xl">
         <header className="flex items-center justify-between border-b border-[#ddd5c3] pb-6">
           <a className="font-serif text-xl italic tracking-wide" href={frontendPaths.home}>Week by week</a>
-          <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href={frontendPaths.myVideos}>My videos</a>
+          <nav aria-label="Logger navigation" className="flex items-center gap-4">
+            <a
+              className="rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
+              href={frontendPaths.weekly}
+            >
+              My weeks
+            </a>
+            <a className="text-sm text-[#887445] underline underline-offset-4 hover:text-[#473c21]" href={frontendPaths.myVideos}>My videos</a>
+          </nav>
         </header>
 
         <section className="relative mt-10 border-2 border-[#473c21] bg-[#f9f6f1] p-5 shadow-[7px_7px_0_#b39e6c] sm:p-8" aria-labelledby="recorder-title">

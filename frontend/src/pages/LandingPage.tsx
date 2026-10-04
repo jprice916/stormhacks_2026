@@ -53,22 +53,10 @@ export function LandingPage() {
 
           <nav aria-label="Main navigation" className="flex items-center gap-4 sm:gap-8">
             <a
-              className="hidden text-base text-[#887445] transition-colors hover:text-[#473c21] sm:inline lg:text-lg"
-              href="#how-it-works"
-            >
-              How it works
-            </a>
-            <a
-              className="hidden text-base text-[#887445] transition-colors hover:text-[#473c21] md:inline lg:text-lg"
+              className="hidden items-center justify-center rounded-full border-2 border-[#998350] px-4 py-2 text-sm font-medium text-[#473c21] transition-colors hover:bg-[#eeebe4] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21] sm:inline-flex sm:px-5 sm:text-base"
               href={frontendPaths.weekly}
             >
-              Carousel preview
-            </a>
-            <a
-              className="hidden text-base text-[#887445] transition-colors hover:text-[#473c21] sm:inline lg:text-lg"
-              href={frontendPaths.profile}
-            >
-              Profile
+              My weeks
             </a>
 
             {/* Dynamic Sign in / Profile status from DB */}
@@ -107,7 +95,7 @@ export function LandingPage() {
               Every memory should have a special place, you can see them all in this little space.
             </p>
 
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="mt-9">
               <a
                 className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-base font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] transition-colors hover:bg-[#887445] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
                 href={profile ? frontendPaths.logger : frontendPaths.login}
@@ -116,12 +104,6 @@ export function LandingPage() {
                 <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 20 20">
                   <path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
                 </svg>
-              </a>
-              <a
-                className="inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-base font-medium text-[#887445] transition-colors hover:text-[#473c21] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#473c21]"
-                href={frontendPaths.weekly}
-              >
-                Explore the carousel preview
               </a>
             </div>
 
