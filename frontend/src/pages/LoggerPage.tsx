@@ -16,12 +16,6 @@ type LiveResponse = {
   retry_after_seconds?: number;
 };
 
-type LiveDebug = {
-  checkpoint: string;
-  responseJson: string;
-  question: string;
-};
-
 type RecordingResponse = {
   message?: string;
   recording_url?: string;
@@ -119,7 +113,6 @@ export function LoggerPage() {
   const [reflection, setReflection] = useState<string | null>(null);
   const [reflectionProgress, setReflectionProgress] = useState(0);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
-  const [liveDebug, setLiveDebug] = useState<LiveDebug | null>(null);
 
   const clearRecordingTimers = useCallback(() => {
     [timerRef, maxTimerRef, pauseTimerRef, checkpointIntervalRef].forEach((timer) => {
@@ -204,11 +197,6 @@ export function LoggerPage() {
     lastCheckpointLengthRef.current = words.length;
     const payload = { recording_id: recordingIdRef.current, trigger, checkpoint: checkpointWords.join(' ') };
     startCooldown(LIVE_COOLDOWN_SECONDS);
-    setLiveDebug({
-      checkpoint: payload.checkpoint,
-      responseJson: '{\n  "pending": true\n}',
-      question: 'Waiting for Gemini…',
-    });
 
     try {
       const response = await fetch('/api/live-reflection', {
@@ -217,11 +205,6 @@ export function LoggerPage() {
         body: JSON.stringify(payload),
       });
       const result = await readResponse<LiveResponse>(response);
-      setLiveDebug({
-        checkpoint: payload.checkpoint,
-        responseJson: JSON.stringify(result, null, 2),
-        question: result.question || 'No question returned',
-      });
       if (!response.ok) {
         setStatus(result.message || `Reflection service returned HTTP ${response.status}.`);
         return;
@@ -238,11 +221,6 @@ export function LoggerPage() {
       }
     } catch (error) {
       const message = error instanceof Error ? `Could not reach the reflection service: ${error.message}` : 'Could not reach the reflection service.';
-      setLiveDebug({
-        checkpoint: payload.checkpoint,
-        responseJson: JSON.stringify({ error: message }, null, 2),
-        question: 'No question returned',
-      });
       setStatus(message);
     }
   }, [showReflection, startCooldown]);
@@ -343,7 +321,6 @@ export function LoggerPage() {
     setIsSaved(false);
     dismissReflection();
     setRevisit(undefined);
-    setLiveDebug(null);
     fullTranscriptRef.current = '';
     interimTranscriptRef.current = '';
     chunksRef.current = [];
@@ -390,7 +367,6 @@ export function LoggerPage() {
     setPlaybackUrl('');
     setIsComplete(false);
     setIsSaved(false);
-    setLiveDebug(null);
     setStatus('Camera ready. Select Record when you are ready to speak.');
   }, [dismissReflection]);
 
@@ -515,15 +491,6 @@ export function LoggerPage() {
           <p className="mt-4 h-6 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6 text-[#887445]" role="status">
             {journalMode === 'voice' ? status : ''}
           </p>
-
-          {journalMode === 'voice' && liveDebug && (
-            <aside className="mt-3 border border-stone-500 bg-stone-950 p-3 font-mono text-xs leading-5 text-stone-100" aria-live="polite">
-              <p className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-stone-300">Live reflection debug</p>
-              <p className="mt-1 break-words text-stone-300">Input: {liveDebug.checkpoint}</p>
-              <p className="mt-2 break-words text-amber-200">Question: {liveDebug.question}</p>
-              <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words text-stone-300">{liveDebug.responseJson}</pre>
-            </aside>
-          )}
 
           {revisit?.suggestion && (
             <aside className="mt-5 border-2 border-[#998350] bg-[#eeebe4] p-4" aria-live="polite">
