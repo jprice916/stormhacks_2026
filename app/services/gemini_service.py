@@ -181,6 +181,9 @@ Return ONLY JSON:
                 "topic": None,
                 "error": "Gemini rate limit reached. Live questions are paused until the limit resets."
                 if rate_limited else "Gemini request failed. Check the server console for the connection detail.",
+                # This is intentionally returned while the temporary debug console is
+                # enabled, so the client can show Gemini's actionable error detail.
+                "details": error_text[:1000],
                 "rate_limited": rate_limited,
                 "retry_after_seconds": 60 if rate_limited else None,
             }
