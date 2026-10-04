@@ -1,9 +1,8 @@
 """HTTP routes for the starter app."""
 
 import os
-import re
-from datetime import datetime, timezone
-from io import BytesIO
+import threading
+import time
 from flask import (
     Blueprint,
     abort,
@@ -31,7 +30,8 @@ from app.media_logs import (
 )
 from app.services.db_service import DatabaseService
 # from app.services.email_service import EmailConfigurationError, EmailService
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiRequestError, GeminiService
+from app.services.revisit_service import RevisitService
 from app.services.login_service import LoginService
 from app.services.stt_service import STTService
 
@@ -39,6 +39,12 @@ main = Blueprint("main", __name__)
 
 gemini_service = GeminiService()
 db_service = DatabaseService()
+revisit_service = RevisitService(db_service, gemini_service)
+LIVE_REFLECTION_COOLDOWN_SECONDS = 15
+LIVE_REFLECTION_MAX_PER_RECORDING = 4
+LIVE_REFLECTION_MIN_WORDS = 10
+live_reflection_limits: dict[str, dict[str, float | int]] = {}
+live_reflection_lock = threading.Lock()
 login_service = LoginService()
 # email_service = EmailService()
 
@@ -202,6 +208,37 @@ def health():
     return jsonify(status="ok")
 
 
+@main.post("/api/live-reflection")
+def live_reflection():
+    """Rate-limit optional live prompts while the user is recording."""
+    payload = request.get_json(silent=True) or {}
+    user_id = str(payload.get("user_id") or "demo_user")
+    recording_id = str(payload.get("recording_id") or "default")
+    limit_key = f"{user_id}:{recording_id}"
+    checkpoint = str(payload.get("checkpoint") or "").strip()
+    if len(checkpoint.split()) < LIVE_REFLECTION_MIN_WORDS:
+        return jsonify(should_prompt=False, question=None, topic=None)
+
+    now = time.monotonic()
+    with live_reflection_lock:
+        state = live_reflection_limits.get(limit_key, {"last_request": 0.0, "count": 0})
+        if now - float(state["last_request"]) < LIVE_REFLECTION_COOLDOWN_SECONDS:
+            return jsonify(should_prompt=False, question=None, topic=None, limited=True,
+                           cooldown_seconds=round(LIVE_REFLECTION_COOLDOWN_SECONDS - (now - float(state["last_request"])), 1))
+        if int(state["count"]) >= LIVE_REFLECTION_MAX_PER_RECORDING:
+            return jsonify(should_prompt=False, question=None, topic=None, limited=True,
+                           cooldown_seconds=0, reason="recording_prompt_limit_reached")
+        state["last_request"] = now
+        live_reflection_limits[limit_key] = state
+
+    result = gemini_service.analyze_live_reflection(checkpoint)
+    result["model"] = "mock" if gemini_service.use_mock else gemini_service.live_model
+    if result["should_prompt"]:
+        with live_reflection_lock:
+            live_reflection_limits[limit_key]["count"] = int(live_reflection_limits[limit_key]["count"]) + 1
+    return jsonify(result)
+
+
 @main.get("/health/db")
 def database_health():
     """Check whether the configured database accepts a connection."""
@@ -244,10 +281,17 @@ def process_log():
         return jsonify(message="No transcript or valid recording file provided."), 400
 
     # 1. Parse milestones and core topics via Gemini
-    analysis = gemini_service.analyze_transcript(transcript)
+    try:
+        analysis = gemini_service.analyze_transcript(
+            transcript,
+            current_date=request.form.get("current_local_date"),
+            user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+        )
 
-    # 2. Generate 768-dimensional vector embedding for TiDB
-    embedding = gemini_service.generate_embedding(transcript)
+        # 2. Generate 768-dimensional vector embedding for TiDB
+        embedding = gemini_service.generate_embedding(transcript)
+    except GeminiRequestError as error:
+        return jsonify(message=str(error), service="gemini"), 503
 
     # 3. Create entry model conforming to the DB schema
     entry = JournalEntry(
@@ -260,21 +304,37 @@ def process_log():
         video_filename=saved_filename,
     )
 
-    # 4. Check for matching historical struggle if user logged an achievement
-    past_match = None
-    if entry.entry_type == "achievement":
-        past_match = db_service.find_matching_struggle(user_id, embedding)
+    # 4. Persist entry metadata and vector string to TiDB
+    try:
+        entry_id = db_service.save_entry(entry, analysis)
+    except MySQLError as error:
+        current_app.logger.exception("Could not save journal entry to TiDB")
+        error_code = error.args[0] if error.args else None
+        message = "Could not save the entry to TiDB."
+        if error_code == 1146:
+            message = "The journal tables have not been created in TiDB yet."
+        return jsonify(message=message, database_error_code=error_code), 503
 
-    # 5. Persist entry metadata and vector string to TiDB
-    entry_id = db_service.save_entry(entry)
+    # 5. Find a verified, user-scoped revisit suggestion.
+    revisit_suggestion = None
+    try:
+        revisit_suggestion = revisit_service.find_suggestion(
+            user_id=user_id,
+            entry_id=entry_id,
+            transcript=transcript,
+            analysis=analysis,
+            embedding=embedding,
+        )
+    except MySQLError:
+        current_app.logger.exception("Could not retrieve or update revisit cues")
 
-    # 6. Return response to React
+    # 6. Return response to the client.
     return jsonify(
         stored=True,
         entry_id=entry_id,
         filename=saved_filename,
         analysis=analysis,
-        matched_past_struggle=past_match,
+        revisit_suggestion=revisit_suggestion,
     ), 200
 
 
@@ -339,6 +399,19 @@ def serve_recording(log_id: int):
         download_name=recording["original_filename"],
         conditional=True,
     )
+
+
+@main.post("/api/revisit-cues/<int:cue_id>/dismiss")
+def dismiss_revisit(cue_id: int):
+    """Record that a user dismissed a revisit suggestion."""
+    payload = request.get_json(silent=True) or {}
+    user_id = str(payload.get("user_id") or "demo_user")
+    try:
+        dismissed = db_service.mark_revisit_dismissed(cue_id, user_id)
+    except MySQLError:
+        current_app.logger.exception("Could not dismiss revisit cue")
+        return jsonify(message="Could not dismiss revisit suggestion."), 503
+    return jsonify(dismissed=dismissed)
 
 
 @main.get("/uploads/<filename>")
