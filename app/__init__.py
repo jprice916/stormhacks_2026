@@ -47,6 +47,7 @@ def create_app() -> Flask:
     load_project_env()
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-only-change-me")
+    app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     try:

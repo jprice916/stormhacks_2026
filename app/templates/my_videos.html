@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}My Videos{% endblock %}
+
+{% block content %}
+<section class="video-library" aria-labelledby="videos-title">
+  <header class="library-header">
+    <span class="eyebrow">Your timeline</span>
+    <h1 id="videos-title">My videos</h1>
+    <p>Only recordings from your account appear here.</p>
+  </header>
+
+  {% if videos %}
+    <div class="video-grid">
+      {% for video in videos %}
+        <article class="video-card">
+          <video controls playsinline preload="metadata" src="{{ video.storage_path }}" aria-label="{{ video.title or 'Recorded video' }}"></video>
+          <div class="video-card-details">
+            <h2>{{ video.title or "Recorded video" }}</h2>
+            <time datetime="{{ video.log_date.isoformat() }}">{{ video.log_date.strftime("%B %d, %Y at %I:%M %p UTC") }}</time>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-videos">
+      <h2>No videos yet</h2>
+      <p>Complete a recording to add it to your timeline.</p>
+      <a class="button button-primary" href="{{ url_for('main.logger') }}">Record a video</a>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

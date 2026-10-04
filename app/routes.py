@@ -2,8 +2,11 @@
 
 import os
 import re
+from datetime import datetime, timezone
+from uuid import uuid4
 from flask import (
     Blueprint,
+    abort,
     current_app,
     jsonify,
     flash,
@@ -19,6 +22,7 @@ from werkzeug.utils import secure_filename
 
 from app.database import get_connection
 from app.models.journal_entry import JournalEntry
+from app.media_logs import create_audio_visual_log, get_video_logs_for_user, user_owns_media
 from app.services.db_service import DatabaseService
 # from app.services.email_service import EmailConfigurationError, EmailService
 from app.services.gemini_service import GeminiService
@@ -40,7 +44,25 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 @main.get("/")
 @login_required
 def index():
-    return render_template("index.html")
+    return redirect(url_for("main.logger"))
+
+
+@main.get("/logger")
+@login_required
+def logger():
+    return render_template("logger.html")
+
+
+@main.get("/my-videos")
+@login_required
+def my_videos():
+    """Temporary library page for the signed-in user's recordings."""
+    try:
+        videos = get_video_logs_for_user(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not load the signed-in user's videos")
+        abort(503)
+    return render_template("my_videos.html", videos=videos)
 
 
 @main.route("/login", methods=["GET", "POST"])
@@ -191,11 +213,10 @@ def database_health():
         return jsonify(status="unavailable"), 503
 
 
-@main.post("/api/recordings")
 @main.post("/api/process-log")
 @login_required
-def create_recording():
-    """Accepts recording uploads or text transcripts, processes with Gemini, and saves to TiDB."""
+def process_log():
+    """Processes text transcripts through Gemini and saves a journal entry."""
     user_id = current_user.get_id()
     transcript = request.form.get("transcript")
 
@@ -251,8 +272,59 @@ def create_recording():
     ), 200
 
 
+@main.post("/api/recordings")
+@login_required
+def save_recording():
+    """Store a media file locally and save its dated metadata in TiDB."""
+    recording = request.files.get("recording")
+    if recording is None or not recording.filename:
+        return jsonify(message="Choose a recording before saving."), 400
+
+    if not recording.mimetype.startswith(("audio/", "video/")):
+        return jsonify(message="Only audio or video recording files are supported."), 415
+
+    original_name = secure_filename(recording.filename) or "webcam-recording.webm"
+    extension = os.path.splitext(original_name)[1].lower() or ".webm"
+    user_id = int(current_user.get_id())
+    stored_filename = f"user-{user_id}-{uuid4().hex}{extension}"
+    file_path = os.path.join(UPLOAD_FOLDER, stored_filename)
+    recording.save(file_path)
+
+    try:
+        logged_at = datetime.now(timezone.utc)
+        duration_seconds = request.form.get("duration_seconds", type=int)
+        notes = f"Duration: {duration_seconds} seconds" if duration_seconds is not None else None
+        log_id = create_audio_visual_log(
+            user_id=user_id,
+            media_type="audio_video",
+            storage_path=url_for("main.serve_upload", filename=stored_filename),
+            log_date=logged_at,
+            title=original_name,
+            notes=notes,
+        )
+    except Exception:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
+
+    return jsonify(
+        stored=True,
+        log_id=log_id,
+        filename=original_name,
+        recording_url=url_for("main.serve_upload", filename=stored_filename),
+        logged_at=logged_at.isoformat(),
+    ), 201
+
+
 @main.get("/uploads/<filename>")
 @login_required
 def serve_upload(filename):
     """Allows React to stream or play back previously recorded video/audio files."""
+    storage_path = url_for("main.serve_upload", filename=filename)
+    try:
+        if not user_owns_media(int(current_user.get_id()), storage_path):
+            abort(404)
+    except MySQLError:
+        current_app.logger.exception("Could not verify recording ownership")
+        abort(503)
     return send_from_directory(UPLOAD_FOLDER, filename)

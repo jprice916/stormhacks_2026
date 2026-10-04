@@ -16,6 +16,7 @@
     {% if current_user.is_authenticated %}
     <div class="account-controls">
       <span class="account-name">{{ current_user.username }}</span>
+      <a class="account-link" href="{{ url_for('main.my_videos') }}">My videos</a>
       <form action="{{ url_for('main.logout') }}" method="post">
         <button class="signout-button" type="submit">Sign out</button>
       </form>
@@ -25,7 +26,7 @@
   <main class="page-shell database-shell">
     {% block content %}{% endblock %}
   </main>
-  <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
 </body>
 
 </html>
