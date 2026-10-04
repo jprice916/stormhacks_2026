@@ -3,11 +3,12 @@ import CircularCarousel from './CircularCarousel';
 
 interface CarouselProps {
   items: CircularCarouselItem[];
+  initialIndex?: number;
   onActiveChange: (index: number) => void;
   onItemClick?: (item: CircularCarouselItem, index: number) => void;
 }
 
-export function Carousel({ items, onActiveChange, onItemClick }: CarouselProps) {
+export function Carousel({ items, initialIndex, onActiveChange, onItemClick }: CarouselProps) {
   if (items.length === 0) {
     return null;
   }
@@ -21,6 +22,7 @@ export function Carousel({ items, onActiveChange, onItemClick }: CarouselProps) 
         draggable
         focusOnClick
         gap={64}
+        initialIndex={initialIndex}
         items={items}
         onChange={onActiveChange}
         onItemClick={onItemClick}

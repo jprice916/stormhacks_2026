@@ -10,10 +10,24 @@ function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
 }
 
+function toLocalDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function currentWeekStartDate() {
+  const today = new Date();
+  const sunday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  sunday.setDate(sunday.getDate() - sunday.getDay());
+  return toLocalDateKey(sunday);
+}
+
 export function WeeklyScreen() {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [selectedDate, setSelectedDate] = useState('2026-10-02');
-  const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
+  const [activeIndex, setActiveIndex] = useState(() => {
+    const today = new Date();
+    return today.getDay() === 0 ? 6 : today.getDay() - 1;
+  });
+  const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(new Date()));
+  const [weekStartDate, setWeekStartDate] = useState(currentWeekStartDate);
   const [summariesByDate, setSummariesByDate] = useState<Record<string, string[]>>({});
   const [isLoadingSummaries, setIsLoadingSummaries] = useState(true);
   const [summariesError, setSummariesError] = useState('');
@@ -246,6 +260,7 @@ export function WeeklyScreen() {
             className="flex flex-1 items-center py-8 sm:py-10 lg:flex-none lg:shrink-0"
           >
             <Carousel
+              initialIndex={activeIndex}
               items={carouselItems}
               onActiveChange={handleActiveCarouselChange}
               onItemClick={(_item, index) => {
@@ -259,7 +274,7 @@ export function WeeklyScreen() {
 
           <section
             aria-label="Agent update"
-            className="mx-auto flex w-full max-w-3xl items-end gap-4 pt-4 sm:gap-6 lg:mt-auto"
+            className="mx-auto flex w-full max-w-5xl items-end gap-4 pt-4 sm:gap-6 lg:mt-auto"
           >
             <Agent
               buttonRef={agentButtonRef}

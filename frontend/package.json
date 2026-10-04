@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev:vite": "vite",
-    "dev:flask": "python ../run.py",
+    "dev:flask": "..\\.venv\\Scripts\\python.exe -m flask --app ..\\run.py run --host 127.0.0.1 --port 5001 --no-reload",
     "dev": "concurrently -k -n \"vite,flask\" -c \"cyan,magenta\" \"npm run dev:vite\" \"npm run dev:flask\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

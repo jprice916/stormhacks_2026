@@ -41,6 +41,7 @@ export interface CircularCarouselProps {
   innerShade?: number;
   cornerRadius?: number;
   captions?: boolean;
+  initialIndex?: number;
   onChange?: (index: number) => void;
   onItemClick?: (item: CircularCarouselItem, index: number) => void;
   className?: string;
@@ -349,6 +350,7 @@ const CircularCarousel = ({
   innerShade = 0.6,
   cornerRadius = 12,
   captions = false,
+  initialIndex = 0,
   onChange,
   onItemClick,
   className = '',
@@ -367,6 +369,7 @@ const CircularCarousel = ({
   const cardH = cardW / clamp(aspectRatio, 0.2, 5);
   const along = axis === 'x' ? cardH : cardW;
   const step = 360 / count;
+  const startingIndex = ((Math.round(initialIndex) % count) + count) % count;
 
   const radius = useMemo(() => {
     const n = Math.max(count, 3);
@@ -404,15 +407,15 @@ const CircularCarousel = ({
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const wakeRef = useRef<() => void>(() => {});
   const measureRef = useRef<() => void>(() => {});
-  const activeRef = useRef(0);
-  const [active, setActive] = useState(0);
+  const activeRef = useRef(startingIndex);
+  const [active, setActive] = useState(startingIndex);
   const [ready, setReady] = useState(false);
   const [dragging, setDragging] = useState(false);
   const readyRef = useRef(false);
   readyRef.current = ready;
 
   const stateRef = useRef<CarouselState>({
-    angle: 0,
+    angle: -startingIndex * step,
     velocity: 0,
     target: null,
     dir: 0,
