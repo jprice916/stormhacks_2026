@@ -1,12 +1,17 @@
 """HTTP routes for the starter app."""
 
-from flask import Blueprint, jsonify, render_template
+from pathlib import Path
+
+from flask import Blueprint, current_app, jsonify, render_template, send_from_directory
 
 main = Blueprint("main", __name__)
 
 
 @main.get("/")
 def index():
+    frontend_dir = Path(current_app.static_folder) / "frontend"
+    if (frontend_dir / "index.html").is_file():
+        return send_from_directory(frontend_dir, "index.html")
     return render_template("index.html")
 
 
