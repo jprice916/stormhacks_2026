@@ -4,6 +4,10 @@ import os
 from pathlib import Path
 
 from flask import Flask
+from flask_cors import CORS
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.database import get_tidb_config
 
@@ -45,7 +49,11 @@ def create_app() -> Flask:
         initialize_database()
         print("Database tables created.")
 
-    from app.routes import main
+    # Required for React to communicate across ports
+    CORS(app)
 
+    # Must match the blueprint variable name in routes.py
+    from app.routes import main
     app.register_blueprint(main)
+
     return app

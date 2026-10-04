@@ -28,6 +28,7 @@ yarn-error.log*
 
 # Audio/Video temporary files and local uploads
 uploads/
+app/uploads/
 temp/
 *.wav
 *.mp3
