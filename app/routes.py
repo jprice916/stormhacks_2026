@@ -566,9 +566,7 @@ def process_log():
     ), 200
 
 
-@main.get("/api/recordings")
-@login_required
-def list_recordings():
+def _list_recordings():
     """Return the signed-in user's TiDB-backed recordings for the React debug page."""
     try:
         videos = get_video_logs_for_user(int(current_user.get_id()))
@@ -587,10 +585,13 @@ def list_recordings():
     ])
 
 
-@main.post("/api/recordings")
+@main.route("/api/recordings", methods=["GET", "POST"])
 @login_required
 def save_recording():
     """Store a media file and its user-linked metadata entirely in TiDB."""
+    if request.method == "GET":
+        return _list_recordings()
+
     recording = request.files.get("recording")
     if recording is None or not recording.filename:
         return jsonify(message="Choose a recording before saving."), 400
