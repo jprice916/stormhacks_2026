@@ -581,7 +581,7 @@ export function LoggerPage() {
           aria-busy={submissionPhase === 'saving'}
           aria-live="assertive"
           aria-modal="true"
-          className={`fixed inset-0 z-50 grid place-items-center p-6 transition-colors duration-1000 ${submissionPhase === 'thank-you' ? 'bg-white' : 'bg-[#f9f6f1]'}`}
+          className={`fixed inset-0 z-50 grid place-items-center p-6 transition-colors duration-1000 ${submissionPhase === 'thank-you' ? 'bg-white' : 'bg-white/70 backdrop-blur-sm'}`}
           role="dialog"
         >
           <div className="relative grid min-h-72 min-w-72 place-items-center">
