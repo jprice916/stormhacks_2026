@@ -459,14 +459,6 @@ export function LoggerPage() {
               {isComplete && <video className="h-full w-full bg-stone-900 object-contain" controls playsInline ref={recordedVideoRef} src={playbackUrl || undefined} />}
               {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
               {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
-              {liveDebug && (
-                <aside className="absolute left-4 top-4 z-10 w-56 border border-stone-500 bg-stone-950/90 p-2 font-mono text-[0.65rem] leading-4 text-stone-100 shadow-sm" aria-live="polite">
-                  <p className="font-sans text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-stone-300">Live reflection debug</p>
-                  <p className="mt-1 truncate text-stone-300" title={liveDebug.checkpoint}>Input: {liveDebug.checkpoint}</p>
-                  <p className="mt-1 text-amber-200">Question: {liveDebug.question}</p>
-                  <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap break-words text-stone-300">{liveDebug.responseJson}</pre>
-                </aside>
-              )}
               {reflection && (
                 <aside className="absolute bottom-11 right-4 z-10 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
                   <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
@@ -490,6 +482,15 @@ export function LoggerPage() {
           <p className="mt-4 h-6 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6 text-[#887445]" role="status">
             {journalMode === 'voice' ? status : ''}
           </p>
+
+          {journalMode === 'voice' && liveDebug && (
+            <aside className="mt-3 border border-stone-500 bg-stone-950 p-3 font-mono text-xs leading-5 text-stone-100" aria-live="polite">
+              <p className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-stone-300">Live reflection debug</p>
+              <p className="mt-1 break-words text-stone-300">Input: {liveDebug.checkpoint}</p>
+              <p className="mt-2 break-words text-amber-200">Question: {liveDebug.question}</p>
+              <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words text-stone-300">{liveDebug.responseJson}</pre>
+            </aside>
+          )}
 
           {revisit?.suggestion && (
             <aside className="mt-5 border-2 border-[#998350] bg-[#eeebe4] p-4" aria-live="polite">
