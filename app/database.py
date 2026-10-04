@@ -5,7 +5,6 @@ import ssl
 from pathlib import Path
 
 import pymysql
-from pymysql.err import ProgrammingError
 from pymysql.connections import Connection
 
 
@@ -78,53 +77,22 @@ def initialize_database() -> None:
             CONSTRAINT fk_audio_visual_logs_user FOREIGN KEY (user_id)
                 REFERENCES users (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
-        """CREATE TABLE IF NOT EXISTS journal_entries (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            user_id VARCHAR(255) NOT NULL,
-            transcript MEDIUMTEXT NOT NULL,
-            entry_type VARCHAR(30) NOT NULL,
-            core_topic VARCHAR(200) NOT NULL,
-            emotion VARCHAR(80) NOT NULL,
-            summary TEXT NOT NULL,
-            key_takeaways JSON,
-            reflection_question JSON,
-            reflection_quote TEXT,
-            temporal_references TEXT,
-            embedding JSON,
-            video_filename VARCHAR(255),
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            INDEX ix_journal_entries_user_created (user_id, created_at),
-            INDEX ix_journal_entries_topic (core_topic)
+        """CREATE TABLE IF NOT EXISTS recording_media (
+            log_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+            mime_type VARCHAR(100) NOT NULL,
+            original_filename VARCHAR(255) NOT NULL,
+            file_size_bytes BIGINT UNSIGNED NOT NULL,
+            chunk_count INT UNSIGNED NOT NULL,
+            CONSTRAINT fk_recording_media_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
-        """CREATE TABLE IF NOT EXISTS important_events (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            entry_id BIGINT UNSIGNED NOT NULL,
-            user_id VARCHAR(255) NOT NULL,
-            title VARCHAR(200) NOT NULL,
-            scheduled_for DATETIME NULL,
-            original_time_reference VARCHAR(255),
-            reminder_reason TEXT,
-            status VARCHAR(30) NOT NULL DEFAULT 'pending',
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            INDEX ix_important_events_user_date (user_id, scheduled_for),
-            INDEX ix_important_events_entry (entry_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
-        """CREATE TABLE IF NOT EXISTS revisit_cues (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            source_entry_id BIGINT UNSIGNED NOT NULL,
-            user_id VARCHAR(255) NOT NULL,
-            topic VARCHAR(200) NOT NULL,
-            trigger_text VARCHAR(500) NOT NULL,
-            trigger_concepts JSON,
-            reason TEXT,
-            baseline_questions JSON,
-            status VARCHAR(30) NOT NULL DEFAULT 'active',
-            last_suggested_at DATETIME NULL,
-            last_dismissed_at DATETIME NULL,
-            shown_count INT UNSIGNED NOT NULL DEFAULT 0,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            INDEX ix_revisit_cues_user_status (user_id, status),
-            INDEX ix_revisit_cues_source (source_entry_id)
+        """CREATE TABLE IF NOT EXISTS recording_chunks (
+            log_id BIGINT UNSIGNED NOT NULL,
+            chunk_index INT UNSIGNED NOT NULL,
+            chunk_data MEDIUMBLOB NOT NULL,
+            PRIMARY KEY (log_id, chunk_index),
+            CONSTRAINT fk_recording_chunks_log FOREIGN KEY (log_id)
+                REFERENCES audio_visual_logs (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     )
     connection = get_connection()
@@ -132,19 +100,6 @@ def initialize_database() -> None:
         with connection.cursor() as cursor:
             for statement in statements:
                 cursor.execute(statement)
-            # TEMPORARY-MIGRATION-SAFE: existing hackathon databases may have the
-            # earlier revisit_cues schema. These statements are safe to rerun and
-            # can be replaced by a formal migration tool during a later refactor.
-            for statement in (
-                "ALTER TABLE revisit_cues ADD COLUMN last_suggested_at DATETIME NULL",
-                "ALTER TABLE revisit_cues ADD COLUMN last_dismissed_at DATETIME NULL",
-                "ALTER TABLE revisit_cues ADD COLUMN shown_count INT UNSIGNED NOT NULL DEFAULT 0",
-            ):
-                try:
-                    cursor.execute(statement)
-                except ProgrammingError as error:
-                    if error.args and error.args[0] != 1060:  # Duplicate column
-                        raise
         connection.commit()
     except Exception:
         connection.rollback()
