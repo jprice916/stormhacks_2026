@@ -1,19 +1,22 @@
 """HTTP routes for the starter app."""
 
-from pathlib import Path
-
-from flask import Blueprint, current_app, jsonify, render_template, send_from_directory
+import io
 import os
+import re
 import threading
 import time
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+
 from flask import (
     Blueprint,
     abort,
     current_app,
-    jsonify,
     flash,
-    render_template,
+    jsonify,
     redirect,
+    render_template,
     request,
     send_file,
     send_from_directory,
@@ -37,6 +40,7 @@ from app.services.gemini_service import GeminiRequestError, GeminiService
 from app.services.revisit_service import RevisitService
 from app.services.login_service import LoginService
 from app.services.stt_service import STTService
+from app.services.elevenlabs_service import ElevenLabsService
 
 main = Blueprint("main", __name__)
 
@@ -50,6 +54,7 @@ live_reflection_limits: dict[str, dict[str, float | int]] = {}
 live_reflection_lock = threading.Lock()
 login_service = LoginService()
 # email_service = EmailService()
+elevenlabs_service = ElevenLabsService()
 
 # Configure local directory for storing audio/video uploads
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
@@ -57,9 +62,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 @main.get("/")
-@login_required
 @main.get("/weekly")
 @main.get("/profile")
+@login_required
 def index():
     frontend_dir = Path(current_app.static_folder) / "frontend"
     if (frontend_dir / "index.html").is_file():
@@ -214,6 +219,27 @@ def database_page():
 @main.get("/health")
 def health():
     return jsonify(status="ok")
+
+
+@main.post("/api/tts")
+def text_to_speech():
+    """Generates an MP3 audio stream for the given text using ElevenLabs."""
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get("text") or "").strip()
+
+    if not text:
+        return jsonify(message="No text provided for speech synthesis."), 400
+
+    try:
+        audio_bytes = elevenlabs_service.synthesize(text)
+        return send_file(
+            io.BytesIO(audio_bytes),
+            mimetype="audio/mpeg",
+            as_attachment=False,
+        )
+    except Exception as error:
+        current_app.logger.exception("ElevenLabs synthesis error")
+        return jsonify(message=str(error)), 500
 
 
 @main.post("/api/live-reflection")
