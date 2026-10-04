@@ -48,7 +48,7 @@ export function MyVideosPage() {
         <section key={video.id}>
           <h2>{video.filename}</h2>
           <p>{new Date(video.recorded_at).toLocaleString()}</p>
-          <video controls playsInline preload="metadata" src={video.recording_url} />
+          <video controls playsInline preload="auto" src={`${video.recording_url}?playback=${video.id}-${Date.parse(video.recorded_at)}`} />
         </section>
       ))}
     </main>

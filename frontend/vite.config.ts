@@ -27,6 +27,10 @@ export default defineConfig({
         target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
+      '/recordings': {
+        target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
+        changeOrigin: true,
+      },
     },
   },
   build: {

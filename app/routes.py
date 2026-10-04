@@ -657,6 +657,7 @@ def serve_recording(log_id: int):
         mimetype=recording["mime_type"],
         download_name=recording["original_filename"],
         conditional=True,
+        max_age=0,
     )
 
 
