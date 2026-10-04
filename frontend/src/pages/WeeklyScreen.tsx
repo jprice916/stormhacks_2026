@@ -3,7 +3,7 @@ import { Agent } from '../components/Agent/Agent';
 import { AgentSidebar } from '../components/Agent/AgentSidebar';
 import { Bubble } from '../components/Bubble/Bubble';
 import { Carousel } from '../components/Carousel/Carousel';
-import { loadWeeklyTakeaways, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
+import { loadWeeklySummaries, weekDayNames, weeklyCarouselTemplates } from '../data/weeklyJournal';
 
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(date);
@@ -14,9 +14,9 @@ export function WeeklyScreen() {
   const [selectedDate, setSelectedDate] = useState('2026-10-02');
   const [weekStartDate, setWeekStartDate] = useState('2026-09-27');
   const [weekStartLabel, setWeekStartLabel] = useState('September 27');
-  const [takeawaysByDate, setTakeawaysByDate] = useState<Record<string, string[]>>({});
-  const [isLoadingTakeaways, setIsLoadingTakeaways] = useState(true);
-  const [takeawaysError, setTakeawaysError] = useState('');
+  const [summariesByDate, setSummariesByDate] = useState<Record<string, string[]>>({});
+  const [isLoadingSummaries, setIsLoadingSummaries] = useState(true);
+  const [summariesError, setSummariesError] = useState('');
   const [isAgentSidebarOpen, setIsAgentSidebarOpen] = useState(false);
   const agentButtonRef = useRef<HTMLButtonElement>(null);
   const weekPickerRef = useRef<HTMLInputElement>(null);
@@ -24,19 +24,19 @@ export function WeeklyScreen() {
 
   useEffect(() => {
     let active = true;
-    setTakeawaysByDate({});
-    setIsLoadingTakeaways(true);
-    setTakeawaysError('');
-    loadWeeklyTakeaways(weekStartDate)
-      .then((takeaways) => { if (active) setTakeawaysByDate(takeaways); })
+    setSummariesByDate({});
+    setIsLoadingSummaries(true);
+    setSummariesError('');
+    loadWeeklySummaries(weekStartDate)
+      .then((summaries) => { if (active) setSummariesByDate(summaries); })
       .catch((error: unknown) => {
         if (!active) return;
-        setTakeawaysByDate({});
-        setTakeawaysError(error instanceof Error
+        setSummariesByDate({});
+        setSummariesError(error instanceof Error
           ? error.message
-          : 'Journal highlights could not be loaded.');
+          : 'Journal summaries could not be loaded.');
       })
-      .finally(() => { if (active) setIsLoadingTakeaways(false); });
+      .finally(() => { if (active) setIsLoadingSummaries(false); });
     return () => { active = false; };
   }, [weekStartDate]);
 
@@ -50,22 +50,22 @@ export function WeeklyScreen() {
       day,
       dateKey,
       dateLabel: formatDate(date),
-      takeaways: takeawaysByDate[dateKey] ?? [],
+      summaries: summariesByDate[dateKey] ?? [],
     };
   });
   const carouselItems = weeklyCarouselTemplates.map((item, index) => {
     const entry = datedEntries[index];
-    const status = isLoadingTakeaways
+    const status = isLoadingSummaries
       ? 'Checking journal…'
-      : takeawaysError
-        ? 'Highlights unavailable'
-        : entry.takeaways.length
-          ? `${entry.takeaways.length} takeaway${entry.takeaways.length === 1 ? '' : 's'}`
+      : summariesError
+        ? 'Summaries unavailable'
+        : entry.summaries.length
+          ? `${entry.summaries.length} entr${entry.summaries.length === 1 ? 'y' : 'ies'}`
           : 'Nothing happened';
     return {
       ...item,
-      src: `${import.meta.env.BASE_URL}assets/${entry.takeaways.length ? 'data-state.svg' : 'empty-state.svg'}`,
-      alt: entry.takeaways.length ? `${entry.day} with journal takeaways` : `${entry.day} with no journal takeaways`,
+      src: `${import.meta.env.BASE_URL}assets/${entry.summaries.length ? 'data-state.svg' : 'empty-state.svg'}`,
+      alt: entry.summaries.length ? `${entry.day} with journal summaries` : `${entry.day} with no journal summaries`,
       subtitle: `${entry.dateLabel} · ${status}`,
     };
   });
@@ -132,7 +132,16 @@ export function WeeklyScreen() {
           </header>
 
           <section aria-label="Weekly highlights" className="flex flex-1 items-center py-8 sm:py-10">
-            <Carousel items={carouselItems} onActiveChange={setActiveIndex} />
+            <Carousel
+              items={carouselItems}
+              onActiveChange={setActiveIndex}
+              onItemClick={(_item, index) => {
+                const entry = datedEntries[index];
+                if (entry) {
+                  window.location.assign(`/static/frontend/recordings?date=${encodeURIComponent(entry.dateKey)}`);
+                }
+              }}
+            />
           </section>
 
           <section aria-label="Agent update" className="mx-auto flex w-full max-w-3xl items-end gap-4 sm:gap-6">
@@ -142,13 +151,13 @@ export function WeeklyScreen() {
               onClick={() => setIsAgentSidebarOpen(true)}
             />
             <Bubble
-              heading={`Journal highlights · ${activeEntry.day}, ${activeEntry.dateLabel}`}
-              text={takeawaysError
-                ? takeawaysError
-                : isLoadingTakeaways
+              heading={`Journal summaries · ${activeEntry.day}, ${activeEntry.dateLabel}`}
+              text={summariesError
+                ? summariesError
+                : isLoadingSummaries
                   ? 'Checking this day…'
-                  : activeEntry.takeaways.length
-                    ? activeEntry.takeaways.join(' · ')
+                  : activeEntry.summaries.length
+                    ? activeEntry.summaries.join(' · ')
                     : 'Nothing happened.'}
             />
           </section>
