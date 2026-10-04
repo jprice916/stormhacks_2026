@@ -13,7 +13,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pem
 .pytest_cache/
+.pem
 
 # React / Node dependencies and builds (if frontend lives in this repo)
 node_modules/
@@ -26,6 +28,7 @@ yarn-error.log*
 
 # Audio/Video temporary files and local uploads
 uploads/
+app/uploads/
 temp/
 *.wav
 *.mp3
