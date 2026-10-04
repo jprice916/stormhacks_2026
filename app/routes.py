@@ -643,6 +643,18 @@ def save_recording():
     entry_id = None
     analysis_error = None
     transcript = request.form.get("transcript", "").strip()
+    if not transcript:
+        try:
+            persisted_recording = get_database_recording(user_id, log_id)
+            if persisted_recording is None:
+                raise ValueError("The confirmed recording could not be read from TiDB.")
+            transcript = STTService.transcribe_media_file(
+                BytesIO(persisted_recording["data"]),
+                mime_type=persisted_recording["mime_type"],
+            )
+        except Exception as error:
+            current_app.logger.exception("Could not transcribe confirmed recording")
+            analysis_error = f"Could not transcribe the confirmed recording: {error}"
     if transcript:
         try:
             analysis = gemini_service.analyze_transcript(
@@ -668,7 +680,7 @@ def save_recording():
             current_app.logger.exception("Could not save final recording analysis")
             analysis = None
             analysis_error = str(error)
-    else:
+    elif analysis_error is None:
         analysis_error = "No browser transcript was captured, so final analysis was skipped."
 
     return jsonify(
@@ -678,6 +690,7 @@ def save_recording():
         recording_url=url_for("main.serve_recording", log_id=log_id),
         logged_at=logged_at.isoformat(),
         analysis=analysis,
+        transcript=transcript or None,
         entry_id=entry_id,
         analysis_error=analysis_error,
     ), 201
