@@ -240,7 +240,7 @@
 
 .voice-volume-value {
   color: #40351e;
-  font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-size: 28px;
   font-weight: 700;
   line-height: 1;
@@ -261,7 +261,7 @@
 
 .voice-volume-mark {
   color: #594a2c;
-  font-family: 'Segoe Print', 'Bradley Hand', cursive;
+  font-family: var(--font-gaegu);
   font-size: 19px;
   font-weight: 700;
   text-align: center;
@@ -401,7 +401,7 @@
 .voice-save-indicator,
 .voice-save-error {
   margin: 0;
-  font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -453,7 +453,7 @@
 
 .voice-load-error p {
   margin: 0;
-  font-family: 'Segoe Print', 'Bradley Hand', cursive;
+  font-family: var(--font-gaegu);
   font-size: 13px;
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { BrandMark } from '../components/BrandMark';
 import {
   defaultSettings,
   loadSettings,
@@ -266,12 +267,7 @@ export function VoiceSettingsPage() {
       <div className="profile-shell voice-settings-shell">
         <header className="profile-topbar voice-settings-topbar">
           <a aria-label="Week by week home" className="profile-brand" href="/">
-            <span aria-hidden="true" className="profile-brand-mark">
-              <svg fill="none" viewBox="0 0 24 24">
-                <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.36-6.36-2.12 2.12M7.76 16.24l-2.12 2.12m12.72 0-2.12-2.12M7.76 7.76 5.64 5.64" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
-                <circle cx="12" cy="12" r="3.25" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
-            </span>
+            <BrandMark className="profile-brand-logo" />
             <span>Week by week</span>
           </a>
           <a className="profile-navigation voice-back-link" href="weekly">
