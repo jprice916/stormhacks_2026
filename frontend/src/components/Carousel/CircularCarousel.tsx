@@ -266,7 +266,7 @@ const OVERLAP = 2.5;
 const DRAG_THRESHOLD = 5;
 const SPRING = 118;
 const SETTLE_SPEED = 9;
-const CAPTION_SPACE = 76;
+const CAPTION_SPACE = 114;
 const TO_RAD = Math.PI / 180;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -991,7 +991,7 @@ const CircularCarousel = ({
           style={{ height: axis === 'x' ? size : cardH, borderRadius: frameRadius }}
         >
           <img
-            className="pointer-events-none absolute block max-w-none select-none object-cover [-webkit-user-drag:none]"
+            className="pointer-events-none absolute block max-w-none select-none rounded-2xl border border-[#d7ceb8] bg-[#f1eee6] p-3 object-contain shadow-[0_8px_24px_rgba(61,49,20,0.14)] [-webkit-user-drag:none]"
             src={item.src}
             alt=""
             draggable={false}
@@ -1072,12 +1072,12 @@ const CircularCarousel = ({
         >
           <span
             key={active}
-            className="flex max-w-full flex-col items-center text-[15px] font-medium leading-[1.35] animate-[circular-carousel-title_520ms_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
+            className="flex max-w-full flex-col items-center text-[22.5px] font-medium leading-[1.35] animate-[circular-carousel-title_520ms_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
           >
             {current.title || current.alt}
             {current.subtitle && <span className="font-normal opacity-60">{current.subtitle}</span>}
           </span>
-          <span className="inline-flex items-center gap-[3px] text-[12px] leading-none tabular-nums opacity-50">
+          <span className="inline-flex items-center gap-[3px] text-[18px] leading-none tabular-nums opacity-50">
             <Digits value={active + 1} />
             <span className="opacity-60">/</span>
             <span>{String(count).padStart(2, '0')}</span>
