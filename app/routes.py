@@ -3,6 +3,8 @@
 from pathlib import Path
 import base64
 import re
+import json
+from datetime import datetime, time as datetime_time, timedelta
 
 from flask import Blueprint, current_app, jsonify, render_template, send_from_directory
 import os
@@ -272,6 +274,60 @@ def api_delete_profile():
         return jsonify(message="The account could not be deleted. Please try again."), 503
     logout_user()
     return jsonify(ok=True)
+
+
+@main.get("/api/journal/takeaways")
+def api_journal_takeaways():
+    """Return the signed-in user's journal takeaways for one Sunday-based week."""
+    if not current_user.is_authenticated:
+        return jsonify(message="Please sign in to view journal highlights."), 401
+
+    week_start_value = request.args.get("week_start", "")
+    try:
+        week_start = datetime.strptime(week_start_value, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify(message="week_start must be a date in YYYY-MM-DD format."), 400
+    if week_start.weekday() != 6:
+        return jsonify(message="week_start must be a Sunday."), 400
+
+    start_at = datetime.combine(week_start, datetime_time.min)
+    end_at = start_at + timedelta(days=7)
+    connection = None
+    try:
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT DATE(created_at) AS entry_date, key_takeaways
+                   FROM journal_entries
+                   WHERE user_id = %s AND created_at >= %s AND created_at < %s
+                   ORDER BY created_at, id""",
+                (current_user.get_id(), start_at, end_at),
+            )
+            rows = cursor.fetchall()
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Could not load journal takeaways from TiDB")
+        return jsonify(message="Journal highlights could not be loaded from the database."), 503
+    finally:
+        if connection is not None:
+            connection.close()
+
+    takeaways_by_date: dict[str, list[str]] = {}
+    for row in rows:
+        value = row.get("key_takeaways")
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                value = []
+        if not isinstance(value, list):
+            continue
+        date_key = row["entry_date"].isoformat()
+        daily_takeaways = takeaways_by_date.setdefault(date_key, [])
+        daily_takeaways.extend(
+            item.strip() for item in value if isinstance(item, str) and item.strip()
+        )
+
+    return jsonify(week_start=week_start.isoformat(), takeaways=takeaways_by_date)
 
 
 @main.route("/signup", methods=["GET", "POST"])
