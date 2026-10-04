@@ -23,7 +23,7 @@ class GeminiService:
         self.use_mock = os.getenv("USE_MOCK_GEMINI", "false").lower() == "true"
         self.api_key = os.getenv("JAYS_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.analysis_model = os.getenv("GEMINI_ANALYSIS_MODEL", "gemini-3.8-flash")
-        self.live_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.5-flash-lite")
+        self.live_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-flash")
         self.client = None
         if self.use_mock:
             return

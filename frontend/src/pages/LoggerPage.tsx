@@ -176,6 +176,10 @@ export function LoggerPage() {
         body: JSON.stringify(payload),
       });
       const result = await readResponse<LiveResponse>(response);
+      if (!response.ok) {
+        setStatus(result.message || `Reflection service returned HTTP ${response.status}.`);
+        return;
+      }
       if (result.cooldown_seconds) startCooldown(result.cooldown_seconds);
       if (result.retry_after_seconds) startCooldown(result.retry_after_seconds);
       if (result.rate_limited) {
@@ -431,7 +435,7 @@ export function LoggerPage() {
               {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
               {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
               {reflection && (
-                <aside className="absolute bottom-11 right-4 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
+                <aside className="absolute bottom-11 right-4 z-10 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
                   <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
                   <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
                   <button className="mt-3 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21]" onClick={() => setReflection(null)} type="button">Keep talking</button>
