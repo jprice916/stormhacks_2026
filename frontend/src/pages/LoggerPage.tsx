@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const MAX_RECORDING_MS = 5 * 60 * 1000;
 const LIVE_COOLDOWN_SECONDS = 15;
 const MIN_CHECKPOINT_WORDS = 10;
+const REFLECTION_DISPLAY_MS = 10_000;
 
 type LiveResponse = {
   should_prompt?: boolean;
@@ -100,6 +101,7 @@ export function LoggerPage() {
   const maxTimerRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
   const checkpointIntervalRef = useRef<number | null>(null);
+  const reflectionTimerRef = useRef<number | null>(null);
   const requestReflectionRef = useRef<(trigger: string) => void>(() => undefined);
 
   const [cameraState, setCameraState] = useState<'loading' | 'ready' | 'error' | 'unsupported'>('loading');
@@ -115,6 +117,7 @@ export function LoggerPage() {
   const [status, setStatus] = useState('Requesting camera and microphone access…');
   const [elapsedMs, setElapsedMs] = useState(0);
   const [reflection, setReflection] = useState<string | null>(null);
+  const [reflectionProgress, setReflectionProgress] = useState(0);
   const [revisit, setRevisit] = useState<RecordingResponse['revisit_suggestion']>();
   const [liveDebug, setLiveDebug] = useState<LiveDebug | null>(null);
 
@@ -128,6 +131,32 @@ export function LoggerPage() {
   const updateElapsedTime = useCallback(() => {
     const elapsed = elapsedMsRef.current + (isPausedRef.current ? 0 : Date.now() - activeSegmentStartedAtRef.current);
     setElapsedMs(Math.min(elapsed, MAX_RECORDING_MS));
+  }, []);
+
+  const dismissReflection = useCallback(() => {
+    if (reflectionTimerRef.current !== null) {
+      window.clearInterval(reflectionTimerRef.current);
+      reflectionTimerRef.current = null;
+    }
+    setReflection(null);
+    setReflectionProgress(0);
+  }, []);
+
+  const showReflection = useCallback((question: string) => {
+    if (reflectionTimerRef.current !== null) window.clearInterval(reflectionTimerRef.current);
+    const expiresAt = Date.now() + REFLECTION_DISPLAY_MS;
+    const updateProgress = () => {
+      const progress = Math.max(0, (expiresAt - Date.now()) / REFLECTION_DISPLAY_MS);
+      setReflectionProgress(progress);
+      if (progress === 0) {
+        if (reflectionTimerRef.current !== null) window.clearInterval(reflectionTimerRef.current);
+        reflectionTimerRef.current = null;
+        setReflection(null);
+      }
+    };
+    setReflection(question);
+    updateProgress();
+    reflectionTimerRef.current = window.setInterval(updateProgress, 100);
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -205,7 +234,7 @@ export function LoggerPage() {
         setStatus(result.error);
       } else if (result.should_prompt && result.question) {
         promptCountRef.current += 1;
-        setReflection(result.question);
+        showReflection(result.question);
       }
     } catch (error) {
       const message = error instanceof Error ? `Could not reach the reflection service: ${error.message}` : 'Could not reach the reflection service.';
@@ -216,7 +245,7 @@ export function LoggerPage() {
       });
       setStatus(message);
     }
-  }, [startCooldown]);
+  }, [showReflection, startCooldown]);
 
   requestReflectionRef.current = requestReflection;
 
@@ -312,7 +341,7 @@ export function LoggerPage() {
     setIsPaused(false);
     setIsComplete(false);
     setIsSaved(false);
-    setReflection(null);
+    dismissReflection();
     setRevisit(undefined);
     setLiveDebug(null);
     fullTranscriptRef.current = '';
@@ -351,9 +380,10 @@ export function LoggerPage() {
       requestReflectionRef.current('20-second interval');
     }, 20_000);
     setStatus('Recording video and listening to your voice. Select Stop recording when finished.');
-  }, [startSpeechRecognition, stopRecording, updateElapsedTime]);
+  }, [dismissReflection, startSpeechRecognition, stopRecording, updateElapsedTime]);
 
   const resetForRetry = useCallback(() => {
+    dismissReflection();
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     objectUrlRef.current = null;
     blobRef.current = null;
@@ -362,7 +392,7 @@ export function LoggerPage() {
     setIsSaved(false);
     setLiveDebug(null);
     setStatus('Camera ready. Select Record when you are ready to speak.');
-  }, []);
+  }, [dismissReflection]);
 
   const uploadRecording = useCallback(async () => {
     if (!blobRef.current) return;
@@ -432,6 +462,7 @@ export function LoggerPage() {
     void startCamera();
     return () => {
       clearRecordingTimers();
+      if (reflectionTimerRef.current !== null) window.clearInterval(reflectionTimerRef.current);
       try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -460,10 +491,12 @@ export function LoggerPage() {
               {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
               {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
               {reflection && (
-                <aside className="absolute bottom-11 right-4 z-10 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
-                  <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
+                <aside className="absolute bottom-11 right-4 z-10 max-w-[min(20rem,calc(100%-2rem))] cursor-pointer border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite" onClick={dismissReflection} role="button" tabIndex={0}>
+                  <div className="flex items-center justify-between gap-5">
+                    <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
+                    <span aria-label="Question disappears in about ten seconds" className="h-5 w-5 shrink-0 rounded-full" style={{ background: `conic-gradient(#887445 ${reflectionProgress * 360}deg, #ddd5c3 0deg)` }} />
+                  </div>
                   <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
-                  <button className="mt-3 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21]" onClick={() => setReflection(null)} type="button">Keep talking</button>
                 </aside>
               )}
             </div>
