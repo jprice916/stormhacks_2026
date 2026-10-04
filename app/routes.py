@@ -18,12 +18,14 @@ from app.database import get_connection
 from app.models.journal_entry import JournalEntry
 from app.services.db_service import DatabaseService
 from app.services.gemini_service import GeminiRequestError, GeminiService
+from app.services.revisit_service import RevisitService
 from app.services.stt_service import STTService
 
 main = Blueprint("main", __name__)
 
 gemini_service = GeminiService()
 db_service = DatabaseService()
+revisit_service = RevisitService(db_service, gemini_service)
 LIVE_REFLECTION_COOLDOWN_SECONDS = 15
 LIVE_REFLECTION_MAX_PER_RECORDING = 4
 LIVE_REFLECTION_MIN_WORDS = 10
@@ -192,28 +194,16 @@ def create_recording():
             message = "The journal tables have not been created in TiDB yet."
         return jsonify(message=message, database_error_code=error_code), 503
 
-    # 5. Retrieve one strong old cue, then let Gemini verify the relationship.
+    # 5. Find a verified, user-scoped revisit suggestion.
     revisit_suggestion = None
     try:
-        candidate = db_service.find_revisit_candidate(
+        revisit_suggestion = revisit_service.find_suggestion(
             user_id=user_id,
-            current_entry_id=entry_id,
-            current_embedding=embedding,
-            current_analysis=analysis,
-            current_transcript=transcript,
+            entry_id=entry_id,
+            transcript=transcript,
+            analysis=analysis,
+            embedding=embedding,
         )
-        if candidate:
-            verification = gemini_service.verify_revisit(analysis, candidate)
-            if verification.get("should_suggest_revisit"):
-                db_service.mark_revisit_suggested(candidate["cue_id"])
-                revisit_suggestion = {
-                    "cue_id": candidate["cue_id"],
-                    "source_entry_id": candidate["source_entry_id"],
-                    "source_created_at": candidate["source_created_at"].isoformat()
-                    if hasattr(candidate["source_created_at"], "isoformat") else str(candidate["source_created_at"]),
-                    "source_summary": candidate["source_summary"],
-                    "suggestion": verification["suggestion"],
-                }
     except MySQLError:
         current_app.logger.exception("Could not retrieve or update revisit cues")
 

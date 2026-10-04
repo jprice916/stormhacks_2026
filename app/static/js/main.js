@@ -200,13 +200,13 @@ class RecorderApp {
       this.timerLabel.textContent = "Recording";
       this.timerBar.classList.add("is-recording");
       this.timerInterval = window.setInterval(() => this.updateTimer(), 250);
-      this.nextPeriodicReflectionAt = Date.now() + 30000;
+      this.nextPeriodicReflectionAt = Date.now() + 20000;
       this.updateReflectionCheckTimer();
       this.liveCheckpointCountdownInterval = window.setInterval(() => this.updateReflectionCheckTimer(), 250);
       this.liveCheckpointInterval = window.setInterval(() => {
-        this.nextPeriodicReflectionAt = Date.now() + 30000;
-        this.requestLiveReflection("30-second interval");
-      }, 30000);
+        this.nextPeriodicReflectionAt = Date.now() + 20000;
+        this.requestLiveReflection("20-second interval");
+      }, 20000);
       this.statusText.textContent = "Recording video and listening to your voice. Click Stop when finished.";
     } catch (error) {
       this.isRecording = false;
