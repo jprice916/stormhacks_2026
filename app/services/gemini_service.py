@@ -74,7 +74,11 @@ The transcript comes from speech-to-text and may contain minor typos, missing
 punctuation, or misheard words. Infer intended meaning only when context makes it
 clear. Do not invent, correct, or rely on uncertain details.
 
-Extract a concise summary, topic, emotion, and takeaways. Identify education starts,
+Create two summaries: a detailed factual summary in 3-5 sentences and a concise
+retrospective recap of at most 3 sentences. The concise recap must begin with
+"On this day, you..." and describe what happened without adding encouragement,
+advice, or facts the user did not state. Also extract a topic, emotion, and takeaways.
+Identify education starts,
 skill learning, career goals, new jobs, achievements, personal growth, and recurring
 struggles. When a user begins a learning path, create 2-4 supportive baseline
 questions at their stated level for future comparison.
@@ -94,7 +98,8 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
-  "summary": "one or two sentences",
+  "summary": "detailed factual summary in 3-5 sentences",
+  "concise_summary": "at most 3 sentences beginning with On this day, you...",
   "key_takeaways": ["point"],
   "growth_signal": {{
     "type": "education_start|career_goal|new_job|skill_building|aspiration|personal_growth|null",
@@ -104,7 +109,6 @@ Return this JSON object:
   }},
   "important_events": [{{"title": "event", "scheduled_for": "YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS or null", "original_time_reference": "exact wording", "reminder_reason": "reminder"}}],
   "future_revisit_cues": [{{"trigger_concepts": ["specific concept"], "trigger": "future milestone", "reason": "why this matters"}}],
-  "reflection_quote": "one supportive sentence",
   "temporal_references": "relative wording or null"
 }}
 
@@ -297,6 +301,7 @@ Return ONLY JSON:
             "core_topic": str(analysis.get("core_topic") or "journal entry")[:200],
             "emotion": str(analysis.get("emotion") or "neutral")[:80],
             "summary": str(analysis.get("summary") or transcript)[:4000],
+            "concise_summary": str(analysis.get("concise_summary") or analysis.get("summary") or transcript)[:1500],
             "key_takeaways": [str(item)[:500] for item in analysis.get("key_takeaways", []) if isinstance(item, str)][:8],
             "growth_signal": {
                 "type": growth.get("type") if growth.get("type") in {"education_start", "career_goal", "new_job", "skill_building", "aspiration", "personal_growth"} else None,
@@ -306,7 +311,6 @@ Return ONLY JSON:
             },
             "important_events": records(analysis.get("important_events"), "title", 10),
             "future_revisit_cues": records(analysis.get("future_revisit_cues"), "trigger", 8),
-            "reflection_quote": str(analysis.get("reflection_quote") or "")[:500],
             "temporal_references": analysis.get("temporal_references") or None,
         }
 
@@ -320,7 +324,7 @@ Return ONLY JSON:
             "growth_signal": {"type": None, "topic": None, "future_revisit_reason": None, "baseline_questions": []},
             "important_events": [],
             "future_revisit_cues": [],
-            "reflection_quote": "Consistent reflection turns small moments into milestones.",
+            "concise_summary": "On this day, you recorded a voice journal entry.",
             "temporal_references": None,
         }
 

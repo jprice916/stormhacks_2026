@@ -13,8 +13,8 @@ type FinalAnalysis = {
   core_topic?: string;
   emotion?: string;
   summary?: string;
+  concise_summary?: string;
   key_takeaways?: string[];
-  reflection_quote?: string;
   important_events?: Array<{ title?: string; scheduled_for?: string | null }>;
   growth_signal?: {
     type?: string | null;
@@ -73,11 +73,12 @@ export function MyVideosPage() {
               <>
                 <p><strong>Topic:</strong> {video.analysis.core_topic || '—'}</p>
                 <p><strong>Type:</strong> {video.analysis.entry_type || '—'} · <strong>Emotion:</strong> {video.analysis.emotion || '—'}</p>
+                <p><strong>Detailed summary</strong></p>
                 <p>{video.analysis.summary || 'No summary returned.'}</p>
+                {video.analysis.concise_summary && <><p><strong>Quick recap</strong></p><p>{video.analysis.concise_summary}</p></>}
                 {!!video.analysis.key_takeaways?.length && <><strong>Takeaways</strong><ul>{video.analysis.key_takeaways.map((takeaway, index) => <li key={index}>{takeaway}</li>)}</ul></>}
                 {video.analysis.growth_signal?.type && <p><strong>Growth signal:</strong> {video.analysis.growth_signal.topic || video.analysis.growth_signal.type}</p>}
                 {!!video.analysis.important_events?.length && <><strong>Important events</strong><ul>{video.analysis.important_events.map((event, index) => <li key={index}>{event.title}{event.scheduled_for ? ` — ${event.scheduled_for}` : ''}</li>)}</ul></>}
-                {video.analysis.reflection_quote && <p><em>{video.analysis.reflection_quote}</em></p>}
               </>
             ) : <p>No final analysis was saved for this recording.</p>}
           </div>

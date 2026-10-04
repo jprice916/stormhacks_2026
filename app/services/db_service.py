@@ -42,7 +42,7 @@ class DatabaseService:
                         payload["user_id"], payload["transcript"], payload["entry_type"],
                         payload["core_topic"], analysis.get("emotion", "neutral"), payload["summary"],
                         json.dumps(analysis.get("key_takeaways", [])), None,
-                        analysis.get("reflection_quote"), analysis.get("temporal_references"),
+                        analysis.get("concise_summary"), analysis.get("temporal_references"),
                         payload["embedding"], payload["video_filename"],
                         payload["recording_log_id"], json.dumps(analysis),
                     ),
