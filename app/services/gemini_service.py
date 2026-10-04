@@ -111,7 +111,7 @@ Return this JSON object:
   "entry_type": "struggle|achievement|general",
   "core_topic": "short label",
   "emotion": "emotion or neutral",
-  "summary": "detailed factual summary in 3-5 sentences",
+  "summary": "detailed factual summary in 3-5 sentences beginning with On this day, you...",
   "concise_summary": "at most 3 sentences beginning with On this day, you...",
   "key_takeaways": ["point"],
   "growth_signal": {{
@@ -161,6 +161,19 @@ for ordinary updates, completed thoughts that need no elaboration, routine detai
 repetition, filler, and clear factual statements. Do not ask merely because the
 speaker named a concrete item, event, person, place, or cost. Do not assume emotions.
 
+A baseline check is another good reason to prompt. Use it only when the speaker
+explicitly says they are starting a named course, program, career path, job, or
+skill, and a concrete foundational question would create a useful before-and-after
+memory. Across one recording, up to three distinct baseline checks are useful; ask
+only one at a time and wait for the person to keep speaking before another. Do not
+pretend to grade them and do not assume they lack knowledge. Invite their current
+explanation in their own words. For example, if someone says they are about to
+start CST and has not studied computer science before, a suitable baseline check is:
+"Before CST begins, how would you explain what an object is in your own words?" Do
+not reuse that example for unrelated subjects. If the program or skill does not make
+a foundational concept clear, ask about their current familiarity instead of
+inventing curriculum. A baseline check should be marked question_type "baseline".
+
 When you do ask a question, make it specific to a concrete detail from this
 checkpoint. Name the event, item, person, place, choice, cost, or goal the speaker
 actually mentioned. Ask one short, natural question. Never use generic wording such
@@ -168,7 +181,7 @@ as "What feels most important" or "What would future you remember" when a concre
 detail is available.
 
 Return ONLY JSON:
-{{"should_prompt": true, "question": "one short optional question or null", "topic": "short label or null"}}
+{{"should_prompt": true, "question": "one short optional question or null", "topic": "short label or null", "question_type": "reflection|baseline|null"}}
 
 <checkpoint>
 {checkpoint}
@@ -183,10 +196,12 @@ Return ONLY JSON:
             parsed = json.loads(response.text or "{}")
             question = parsed.get("question")
             should_prompt = bool(parsed.get("should_prompt") and isinstance(question, str) and question.strip())
+            question_type = parsed.get("question_type")
             return {
                 "should_prompt": should_prompt,
                 "question": question.strip()[:500] if should_prompt else None,
                 "topic": str(parsed.get("topic") or "")[:120] or None,
+                "question_type": question_type if question_type in {"reflection", "baseline"} and should_prompt else None,
             }
         except Exception as error:
             error_text = str(error)
@@ -354,4 +369,5 @@ Return ONLY JSON:
             "should_prompt": True,
             "question": "What specific part of this experience would you want to unpack a little more?",
             "topic": "reflection",
+            "question_type": "reflection",
         }
