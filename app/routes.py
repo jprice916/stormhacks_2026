@@ -1,6 +1,7 @@
 """HTTP routes for the starter app."""
 
 from pathlib import Path
+from io import BytesIO
 import base64
 import re
 import json
@@ -579,10 +580,32 @@ def process_log():
     ), 200
 
 
-@main.post("/api/recordings")
+def _list_recordings():
+    """Return the signed-in user's TiDB-backed recordings for the React debug page."""
+    try:
+        videos = get_video_logs_for_user(int(current_user.get_id()))
+    except MySQLError:
+        current_app.logger.exception("Could not list recordings from TiDB")
+        return jsonify(message="Could not load recordings from TiDB."), 503
+
+    return jsonify(videos=[
+        {
+            "id": video["id"],
+            "filename": video["title"] or "Recorded video",
+            "recorded_at": video["log_date"].isoformat(),
+            "recording_url": video["storage_path"],
+        }
+        for video in videos
+    ])
+
+
+@main.route("/api/recordings", methods=["GET", "POST"])
 @login_required
 def save_recording():
     """Store a media file and its user-linked metadata entirely in TiDB."""
+    if request.method == "GET":
+        return _list_recordings()
+
     recording = request.files.get("recording")
     if recording is None or not recording.filename:
         return jsonify(message="Choose a recording before saving."), 400
@@ -613,6 +636,14 @@ def save_recording():
         )
     except ValueError as error:
         return jsonify(message=str(error)), 400
+    except MySQLError:
+        current_app.logger.exception("Could not save recording to TiDB")
+        return jsonify(
+            message=(
+                "Could not save the recording to TiDB. Run `flask --app run.py init-db` "
+                "to create the recording tables, then try again."
+            )
+        ), 503
 
     return jsonify(
         stored=True,
@@ -639,6 +670,7 @@ def serve_recording(log_id: int):
         mimetype=recording["mime_type"],
         download_name=recording["original_filename"],
         conditional=True,
+        max_age=0,
     )
 
 
