@@ -20,8 +20,8 @@ class RecorderApp {
     this.timerBar = document.querySelector(".timer-bar");
     this.recordedVideo = document.querySelector("#recorded-video");
     this.recordingActions = document.querySelector("#recording-actions");
-    this.downloadLink = document.querySelector("#download-link");
-    this.saveButton = document.querySelector("#save-button");
+    this.retryButton = document.querySelector("#retry-button");
+    this.completeButton = document.querySelector("#complete-button");
     this.revisitSuggestion = document.querySelector("#revisit-suggestion");
     this.revisitSuggestionText = document.querySelector("#revisit-suggestion-text");
     this.revisitSourceDate = document.querySelector("#revisit-source-date");
@@ -65,10 +65,13 @@ class RecorderApp {
   }
 
   bindEvents() {
-    this.cameraButton.addEventListener("click", () => this.startCamera());
-    this.startButton.addEventListener("click", () => this.startRecording());
-    this.stopButton.addEventListener("click", () => this.stopRecording());
-    this.saveButton.addEventListener("click", () => this.uploadRecording());
+    this.recordButton.addEventListener("click", () => {
+      if (!this.mediaStream) this.startCamera();
+      else if (this.isRecording) this.stopRecording();
+      else this.startRecording();
+    });
+    this.retryButton.addEventListener("click", () => this.resetForRetry());
+    this.completeButton.addEventListener("click", () => this.uploadRecording());
     this.dismissRevisitButton.addEventListener("click", () => this.dismissRevisitSuggestion());
     this.dismissReflectionButton.addEventListener("click", () => {
       this.liveReflection.hidden = true;
@@ -79,8 +82,10 @@ class RecorderApp {
   async startCamera() {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       this.statusText.textContent = "Recording is not supported in this browser.";
+      this.recordButton.disabled = true;
       return;
     }
+    if (this.mediaStream) return;
 
     this.recordButton.disabled = true;
     this.statusText.textContent = "Requesting camera and microphone access…";
@@ -93,14 +98,18 @@ class RecorderApp {
       this.recordedVideo.hidden = true;
       this.preview.srcObject = this.mediaStream;
       this.placeholder.hidden = true;
-      this.cameraButton.textContent = "Camera ready";
-      this.startButton.disabled = false;
-      this.statusText.textContent = "Camera ready. Select Start recording when you are ready to speak.";
+      this.recordButton.hidden = false;
+      this.recordButton.disabled = false;
+      this.recordButton.textContent = "Record";
+      this.statusText.textContent = "Camera ready. Select Record when you are ready to speak.";
     } catch (error) {
       this.stopCamera();
-      this.statusText.textContent = `Could not start camera: ${error.message}`;
+      this.recordButton.hidden = false;
+      this.recordButton.disabled = false;
+      this.recordButton.textContent = "Retry camera";
+      this.statusText.textContent = `Could not start camera: ${error.message}. Select Retry camera after allowing camera and microphone access.`;
     } finally {
-      this.cameraButton.disabled = Boolean(this.mediaStream);
+      if (this.mediaStream) this.recordButton.disabled = false;
     }
   }
 
@@ -155,9 +164,7 @@ class RecorderApp {
     if (!this.mediaStream) return;
 
     this.isRecording = true;
-    this.startButton.disabled = true;
-    this.cameraButton.disabled = true;
-    this.stopButton.disabled = false;
+    this.recordButton.textContent = "Stop recording";
     this.recordingActions.hidden = true;
     this.recordedVideo.hidden = true;
     this.revisitSuggestion.hidden = true;
@@ -208,6 +215,7 @@ class RecorderApp {
       this.timerLabel.textContent = "Time left";
       this.timerBar.classList.add("is-recording");
       this.timerInterval = window.setInterval(() => this.updateTimer(), 250);
+      this.recordingTimeout = window.setTimeout(() => this.stopRecording(), RecorderApp.maxRecordingDurationMs);
       this.nextPeriodicReflectionAt = Date.now() + 20000;
       this.updateReflectionCheckTimer();
       this.liveCheckpointCountdownInterval = window.setInterval(() => this.updateReflectionCheckTimer(), 250);
@@ -218,8 +226,7 @@ class RecorderApp {
       this.statusText.textContent = "Recording video and listening to your voice. Click Stop when finished.";
     } catch (error) {
       this.isRecording = false;
-      this.startButton.disabled = false;
-      this.cameraButton.disabled = false;
+      this.recordButton.textContent = "Record";
       this.statusText.textContent = `Could not start recording: ${error.message}`;
     }
   }
@@ -242,7 +249,7 @@ class RecorderApp {
       this.mediaRecorder.stop();
     }
 
-    this.stopButton.disabled = true;
+    this.recordButton.disabled = true;
     window.clearInterval(this.timerInterval);
     window.clearTimeout(this.recordingTimeout);
     this.updateTimer();
@@ -260,23 +267,22 @@ class RecorderApp {
     this.recordedVideo.load();
     this.recordingActions.hidden = false;
 
-    this.saveButton.disabled = true;
-    this.saveButton.textContent = "Saving entry…";
+    this.completeButton.disabled = false;
+    this.completeButton.textContent = "Complete";
 
     this.timerBar.classList.remove("is-recording");
     this.timerLabel.textContent = "Recording complete";
-    this.startButton.disabled = false;
-    this.cameraButton.disabled = false;
+    this.preview.hidden = true;
+    this.recordButton.hidden = true;
 
-    this.statusText.textContent = `Recording complete (${(this.recordingBlob.size / (1024 * 1024)).toFixed(1)} MB). Analyzing with Gemini…`;
-
-    this.uploadRecording();
+    this.statusText.textContent = `Recording complete (${(this.recordingBlob.size / (1024 * 1024)).toFixed(1)} MB). Complete it to save.`;
   }
 
   async uploadRecording() {
     if (!this.recordingBlob) return;
 
-    this.saveButton.disabled = true;
+    this.completeButton.disabled = true;
+    this.completeButton.textContent = "Saving…";
 
     const rawTranscript = (this.fullTranscript + this.interimTranscript);
 
@@ -285,8 +291,8 @@ class RecorderApp {
 
     const formData = new FormData();
     formData.append("recording", this.recordingBlob, `entry_${Date.now()}.webm`);
-    formData.append("user_id", "demo_user");
     formData.append("duration_seconds", String(this.recordedDurationSeconds));
+    formData.append("recorded_at_local", this.recordedAtLocal || this.localTimestamp());
     formData.append("current_local_date", new Date().toLocaleDateString("en-CA"));
     formData.append("user_time_zone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Vancouver");
     if (sanitizedTranscript) {
@@ -306,8 +312,12 @@ class RecorderApp {
           ? `"${sanitizedTranscript}"`
           : (result.transcript || "Recording saved.");
 
-        this.saveButton.textContent = "Saved to Database";
-        this.saveButton.disabled = true;
+        this.completeButton.textContent = "Saved";
+
+        if (result.recording_url) {
+          this.recordedVideo.src = result.recording_url;
+          this.recordedVideo.load();
+        }
 
         if (result.analysis) {
           this.handleAnalysis(result.analysis);
@@ -315,14 +325,30 @@ class RecorderApp {
         this.showRevisitSuggestion(result.revisit_suggestion);
       } else {
         this.statusText.textContent = result.message || "Failed to process entry.";
-        this.saveButton.disabled = false;
-        this.saveButton.textContent = "Retry Save";
+        this.completeButton.disabled = false;
+        this.completeButton.textContent = "Retry complete";
       }
     } catch (error) {
       this.statusText.textContent = `Server communication error: ${error.message}`;
-      this.saveButton.disabled = false;
-      this.saveButton.textContent = "Retry Save";
+      this.completeButton.disabled = false;
+      this.completeButton.textContent = "Retry complete";
     }
+  }
+
+  resetForRetry() {
+    if (this.recordingUrl) URL.revokeObjectURL(this.recordingUrl);
+    this.recordingUrl = undefined;
+    this.recordingBlob = undefined;
+    this.recordedVideo.pause();
+    this.recordedVideo.removeAttribute("src");
+    this.recordedVideo.load();
+    this.recordedVideo.hidden = true;
+    this.preview.hidden = false;
+    this.recordingActions.hidden = true;
+    this.recordButton.hidden = false;
+    this.recordButton.disabled = !this.mediaStream;
+    this.recordButton.textContent = "Record";
+    this.statusText.textContent = "Camera ready. Select Record when you are ready to speak.";
   }
 
   handleAnalysis(analysis) {
@@ -356,7 +382,7 @@ class RecorderApp {
       const response = await fetch("/api/revisit-cues/" + encodeURIComponent(cueId) + "/dismiss", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: "demo_user" }),
+        body: JSON.stringify({}),
       });
       if (response.ok) this.revisitSuggestion.hidden = true;
     } catch (error) {
@@ -435,7 +461,6 @@ class RecorderApp {
     const checkpoint = checkpointWords.join(" ");
     this.lastCheckpointLength = words.length;
     const requestPayload = {
-      user_id: "demo_user",
       recording_id: this.recordingSessionId,
       trigger,
       checkpoint,
@@ -510,6 +535,12 @@ class RecorderApp {
     this.timer.textContent = this.formatTime(Math.max(0, RecorderApp.maxRecordingDurationMs - elapsed));
   }
 
+  localTimestamp() {
+    const now = new Date();
+    const localTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000));
+    return localTime.toISOString().slice(0, 19);
+  }
+
   formatTime(milliseconds) {
     const seconds = Math.ceil(milliseconds / 1000);
     return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -520,7 +551,9 @@ class RecorderApp {
     this.mediaStream?.getTracks().forEach((track) => track.stop());
     this.mediaStream = undefined;
     this.preview.srcObject = null;
-    this.placeholder.hidden = !showPlaceholder;
+    this.preview.hidden = true;
+    this.placeholder.hidden = false;
+    this.recordButton.disabled = true;
   }
 
   destroy() {
