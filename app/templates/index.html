@@ -16,6 +16,26 @@
   </div>
 
   <p id="recording-status" class="recording-status" role="status" aria-live="polite">Turn on the camera to begin.</p>
+  <aside id="live-reflection" class="live-reflection" hidden aria-live="polite">
+    <span>Thought to explore</span>
+    <p id="live-reflection-question"></p>
+    <button id="dismiss-reflection" class="button button-secondary" type="button">Keep talking</button>
+  </aside>
+  <section class="live-debug" aria-labelledby="live-debug-title">
+    <h2 id="live-debug-title">Live reflection debug</h2>
+    <p><strong>Question:</strong> <span id="debug-question">Waiting for a prompt.</span></p>
+    <p><strong>Gemini status:</strong> <span id="debug-gemini-status">Waiting to send a checkpoint.</span></p>
+    <p><strong>Next reflection check:</strong> <span id="debug-reflection-check">Starts when recording begins.</span></p>
+    <p><strong>API cooldown:</strong> <span id="debug-cooldown">Ready when you pause after 10 finalized words.</span></p>
+    <div>
+      <strong>Outgoing checkpoint</strong>
+      <pre id="debug-request">Waiting for a pause with enough finalized speech.</pre>
+    </div>
+    <div>
+      <strong>Incoming response</strong>
+      <pre id="debug-response">No response yet.</pre>
+    </div>
+  </section>
   <div class="controls">
     <button id="camera-button" class="button button-secondary" type="button">Turn on camera</button>
     <button id="start-button" class="button button-primary" type="button" disabled>Start recording</button>
@@ -23,9 +43,16 @@
   </div>
 
   <video id="recorded-video" class="recorded-video" controls playsinline hidden aria-label="Recorded video preview"></video>
+  <aside id="revisit-suggestion" class="revisit-suggestion" hidden aria-live="polite">
+    <span>From an earlier chapter</span>
+    <p id="revisit-suggestion-text"></p>
+    <p id="revisit-source-date" class="revisit-source-summary"></p>
+    <p id="revisit-source-summary" class="revisit-source-summary"></p>
+    <button id="dismiss-revisit" class="button button-secondary" type="button">Not now</button>
+  </aside>
   <div id="recording-actions" class="recording-actions" hidden>
     <a id="download-link" class="button button-secondary" download="webcam-recording.webm">Download recording</a>
-    <button id="save-button" class="button button-secondary" type="button">Send to TiDB (placeholder)</button>
+    <button id="save-button" class="button button-secondary" type="button">Save entry</button>
   </div>
 </section>
 

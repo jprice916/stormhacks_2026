@@ -29,6 +29,18 @@ h1 { margin: 12px 0 8px; font-size: clamp(2rem, 6vw, 3rem); letter-spacing: -.05
 #camera-preview { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .preview-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #aeb6c8; font-size: .95rem; }
 .recording-status { min-height: 24px; margin: 18px 0 12px; color: #626d80; font-size: .9rem; }
+.live-reflection { margin: 0 0 16px; padding: 14px 16px; border: 1px solid #d9dcfb; border-radius: 12px; background: #f6f6ff; color: #303557; }
+.live-reflection span { color: #555bd1; font-size: .75rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.live-reflection p { margin: 7px 0 12px; line-height: 1.5; }
+.revisit-suggestion { margin-top: 16px; padding: 16px; border: 1px solid #cfe8dc; border-radius: 12px; background: #f3fbf7; color: #254837; }
+.revisit-suggestion span { color: #28734f; font-size: .75rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.revisit-suggestion p { margin: 8px 0; line-height: 1.5; }
+.revisit-source-summary { color: #587264; font-size: .9rem; }
+.live-debug { margin: 0 0 16px; padding: 14px 16px; border: 1px solid #dfe3eb; border-radius: 12px; background: #fbfcfe; color: #30394b; font-size: .85rem; }
+.live-debug h2 { margin: 0 0 10px; font-size: 1rem; }
+.live-debug p { margin: 0 0 12px; }
+.live-debug div + div { margin-top: 12px; }
+.live-debug pre { max-height: 180px; margin: 6px 0 0; padding: 10px; overflow: auto; border-radius: 8px; background: #1f2430; color: #e9edf7; font: .78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .controls, .recording-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border: 0; border-radius: 9px; font: inherit; font-size: .9rem; font-weight: 650; text-decoration: none; cursor: pointer; }
 .button:disabled { opacity: .45; cursor: not-allowed; }
