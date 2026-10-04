@@ -3,7 +3,15 @@ interface BubbleProps {
   text: string;
 }
 
+function truncateSummary(text: string, maxLength = 240) {
+  if (text.length <= maxLength) return text;
+  const cutAt = text.lastIndexOf(' ', maxLength);
+  return `${text.slice(0, cutAt > 0 ? cutAt : maxLength).trimEnd()}…`;
+}
+
 export function Bubble({ heading, text }: BubbleProps) {
+  const displayedText = truncateSummary(text);
+
   return (
     <section
       aria-live="polite"
@@ -16,10 +24,10 @@ export function Bubble({ heading, text }: BubbleProps) {
           display: '-webkit-box',
           overflow: 'hidden',
           WebkitBoxOrient: 'vertical',
-          WebkitLineClamp: 3,
+          WebkitLineClamp: 2,
         }}
       >
-        {text}
+        {displayedText}
       </p>
     </section>
   );
