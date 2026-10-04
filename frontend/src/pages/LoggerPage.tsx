@@ -21,6 +21,7 @@ type RecordingResponse = {
   recording_url?: string;
   transcript?: string;
   analysis?: Record<string, unknown>;
+  analysis_status?: 'queued' | 'skipped';
   analysis_error?: string;
   revisit_suggestion?: {
     cue_id?: number;
@@ -390,7 +391,9 @@ export function LoggerPage() {
       if (result.recording_url) setPlaybackUrl(result.recording_url);
       setRevisit(result.revisit_suggestion);
       setStatus(
-        result.analysis_error
+        result.analysis_status === 'queued'
+          ? 'Video saved. Final analysis is processing automatically.'
+          : result.analysis_error
           ? `Video saved. Final analysis was skipped: ${result.analysis_error}`
           : result.analysis
             ? 'Video and final analysis saved.'

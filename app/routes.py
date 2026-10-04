@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, jsonify, render_template, send_from_di
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from flask import (
     Blueprint,
     abort,
@@ -32,8 +33,13 @@ from app.database import get_connection
 from app.models.journal_entry import JournalEntry
 from app.media_logs import (
     create_database_recording,
+    claim_recording_analysis_job,
+    enqueue_recording_analysis,
+    finish_recording_analysis_job,
     get_database_recording,
+    get_due_recording_analysis_job_ids,
     get_recording_analysis_input,
+    retry_or_fail_recording_analysis_job,
     get_video_logs_for_user,
     update_recording_analysis_state,
     user_owns_media,
@@ -60,6 +66,9 @@ LIVE_REFLECTION_MAX_PER_RECORDING = 4
 LIVE_REFLECTION_MIN_WORDS = 10
 live_reflection_limits: dict[str, dict[str, float | int]] = {}
 live_reflection_lock = threading.Lock()
+analysis_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="recording-analysis")
+analysis_jobs_in_progress: set[int] = set()
+analysis_jobs_lock = threading.Lock()
 login_service = LoginService()
 profile_service = ProfileService()
 # email_service = EmailService()
@@ -571,6 +580,7 @@ def process_log():
 
 def _list_recordings():
     """Return the signed-in user's TiDB-backed recordings for the React debug page."""
+    _schedule_due_recording_analysis_jobs()
     try:
         videos = get_video_logs_for_user(int(current_user.get_id()))
     except MySQLError:
@@ -642,6 +652,88 @@ def _save_final_recording_analysis(
         return None, None, analysis_error
 
 
+def _schedule_recording_analysis_job(app, log_id: int, *, delay_seconds: int = 0) -> None:
+    """Run one durable queued job outside the request that stored the video."""
+    def submit() -> None:
+        with analysis_jobs_lock:
+            if log_id in analysis_jobs_in_progress:
+                return
+            analysis_jobs_in_progress.add(log_id)
+        analysis_executor.submit(_process_recording_analysis_job, app, log_id)
+
+    if delay_seconds:
+        timer = threading.Timer(delay_seconds, submit)
+        timer.daemon = True
+        timer.start()
+    else:
+        submit()
+
+
+def _schedule_due_recording_analysis_jobs() -> None:
+    """Resume TiDB-queued work after a server restart when the app is next used."""
+    try:
+        app = current_app._get_current_object()
+        for log_id in get_due_recording_analysis_job_ids():
+            _schedule_recording_analysis_job(app, log_id)
+    except MySQLError:
+        current_app.logger.exception("Could not schedule due recording-analysis jobs")
+
+
+def _process_recording_analysis_job(app, log_id: int) -> None:
+    """Claim, analyze, and persist one queue item; failures retry with backoff."""
+    retry_delay = None
+    job = None
+    try:
+        with app.app_context():
+            job = claim_recording_analysis_job(log_id)
+            if job is None:
+                return
+            recording = get_recording_analysis_input(int(job["user_id"]), log_id)
+            transcript = str(recording.get("transcript") or "").strip() if recording else ""
+            if not recording or not transcript:
+                update_recording_analysis_state(
+                    log_id, status="skipped", error="No browser transcript was captured, so final analysis was skipped.",
+                )
+                finish_recording_analysis_job(log_id)
+                return
+            analysis, _, analysis_error = _save_final_recording_analysis(
+                log_id=log_id,
+                user_id=str(job["user_id"]),
+                filename=str(recording.get("title") or "webcam-recording.webm"),
+                transcript=transcript,
+                current_date=job.get("journal_date").isoformat() if job.get("journal_date") else None,
+                user_time_zone=str(job.get("user_time_zone") or "America/Vancouver"),
+            )
+            if analysis:
+                finish_recording_analysis_job(log_id)
+            else:
+                error = analysis_error or "Final analysis did not complete."
+                retry_delay = retry_or_fail_recording_analysis_job(log_id, int(job["attempt_count"]), error)
+                update_recording_analysis_state(
+                    log_id,
+                    status="retrying" if retry_delay is not None else "failed",
+                    error=error,
+                )
+    except Exception:
+        app.logger.exception("Recording-analysis worker crashed for recording %s", log_id)
+        if job is not None:
+            try:
+                error = "The analysis worker stopped unexpectedly."
+                retry_delay = retry_or_fail_recording_analysis_job(log_id, int(job["attempt_count"]), error)
+                update_recording_analysis_state(
+                    log_id,
+                    status="retrying" if retry_delay is not None else "failed",
+                    error=error,
+                )
+            except Exception:
+                app.logger.exception("Could not schedule recovery for recording %s", log_id)
+    finally:
+        with analysis_jobs_lock:
+            analysis_jobs_in_progress.discard(log_id)
+    if retry_delay is not None:
+        _schedule_recording_analysis_job(app, log_id, delay_seconds=retry_delay)
+
+
 @main.route("/api/recordings", methods=["GET", "POST"])
 @login_required
 def save_recording():
@@ -688,21 +780,26 @@ def save_recording():
             )
         ), 503
 
-    analysis = None
-    entry_id = None
-    analysis_error = None
     transcript = request.form.get("transcript", "").strip()
+    analysis_status = "queued"
+    analysis_error = None
     if transcript:
-        analysis, entry_id, analysis_error = _save_final_recording_analysis(
-            log_id=log_id,
-            user_id=current_user.get_id(),
-            filename=original_name,
-            transcript=transcript,
-            current_date=request.form.get("current_local_date"),
-            user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
-        )
+        try:
+            update_recording_analysis_state(log_id, transcript=transcript, status="queued")
+            enqueue_recording_analysis(
+                log_id, user_id,
+                current_date=request.form.get("current_local_date"),
+                user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
+            )
+            _schedule_recording_analysis_job(current_app._get_current_object(), log_id)
+        except MySQLError:
+            current_app.logger.exception("Could not queue final recording analysis")
+            analysis_status = "failed"
+            analysis_error = "Could not queue final analysis."
+            update_recording_analysis_state(log_id, transcript=transcript, status=analysis_status, error=analysis_error)
     else:
         analysis_error = "No browser transcript was captured, so final analysis was skipped."
+        analysis_status = "skipped"
         try:
             update_recording_analysis_state(log_id, status="skipped", error=analysis_error)
         except MySQLError:
@@ -714,41 +811,12 @@ def save_recording():
         filename=original_name,
         recording_url=url_for("main.serve_recording", log_id=log_id),
         logged_at=logged_at.isoformat(),
-        analysis=analysis,
+        analysis=None,
         transcript=transcript or None,
-        entry_id=entry_id,
+        entry_id=None,
+        analysis_status=analysis_status,
         analysis_error=analysis_error,
     ), 201
-
-
-@main.post("/api/recordings/<int:log_id>/analysis")
-@login_required
-def retry_recording_analysis(log_id: int):
-    """Retry final analysis for a confirmed recording with a saved browser transcript."""
-    try:
-        recording = get_recording_analysis_input(int(current_user.get_id()), log_id)
-    except MySQLError:
-        current_app.logger.exception("Could not load recording for analysis retry")
-        return jsonify(message="Could not load that recording."), 503
-    if recording is None:
-        return jsonify(message="Recording not found."), 404
-    if recording.get("analysis_status") == "saved":
-        return jsonify(message="Final analysis is already saved."), 409
-    transcript = str(recording.get("transcript") or "").strip()
-    if not transcript:
-        return jsonify(message="This recording has no browser transcript to analyze."), 400
-
-    analysis, entry_id, analysis_error = _save_final_recording_analysis(
-        log_id=log_id,
-        user_id=current_user.get_id(),
-        filename=str(recording.get("title") or "webcam-recording.webm"),
-        transcript=transcript,
-        current_date=datetime.now().date().isoformat(),
-        user_time_zone=request.json.get("user_time_zone", "America/Vancouver") if request.is_json else "America/Vancouver",
-    )
-    if analysis_error:
-        return jsonify(message=analysis_error), 503
-    return jsonify(stored=True, entry_id=entry_id, analysis=analysis)
 
 
 @main.get("/recordings/<int:log_id>")

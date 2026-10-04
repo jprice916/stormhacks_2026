@@ -6,7 +6,7 @@ type VideoRecord = {
   recorded_at: string;
   recording_url: string;
   analysis: FinalAnalysis | null;
-  analysis_status?: 'processing' | 'saved' | 'failed' | 'skipped' | null;
+  analysis_status?: 'queued' | 'processing' | 'retrying' | 'saved' | 'failed' | 'skipped' | null;
   analysis_error?: string | null;
   transcript_available?: boolean;
 };
@@ -38,7 +38,6 @@ async function readJson(response: Response) {
 export function MyVideosPage() {
   const [videos, setVideos] = useState<VideoRecord[]>([]);
   const [message, setMessage] = useState('Loading your videos…');
-  const [retryingId, setRetryingId] = useState<number | null>(null);
 
   const loadVideos = async () => {
     const response = await fetch('/api/recordings');
@@ -50,25 +49,13 @@ export function MyVideosPage() {
 
   useEffect(() => {
     void loadVideos().catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load videos.'));
-  }, []);
-
-  const retryAnalysis = async (video: VideoRecord) => {
-    setRetryingId(video.id);
-    try {
-      const response = await fetch(`/api/recordings/${video.id}/analysis`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-      });
-      const result = await readJson(response);
-      if (!response.ok) throw new Error(result.message || 'Could not retry final analysis.');
-      await loadVideos();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not retry final analysis.');
-    } finally {
-      setRetryingId(null);
-    }
-  };
+    const refresh = window.setInterval(() => {
+      if (videos.some((video) => ['queued', 'processing', 'retrying'].includes(video.analysis_status || ''))) {
+        void loadVideos().catch(() => undefined);
+      }
+    }, 4_000);
+    return () => window.clearInterval(refresh);
+  }, [videos]);
 
   return (
     <main>
@@ -100,12 +87,12 @@ export function MyVideosPage() {
                 {!!video.analysis.important_events?.length && <><strong>Important events</strong><ul>{video.analysis.important_events.map((event, index) => <li key={index}>{event.title}{event.scheduled_for ? ` — ${event.scheduled_for}` : ''}</li>)}</ul></>}
               </>
             ) : <>
-              <p>No final analysis was saved for this recording.</p>
-              {video.analysis_status === 'failed' && <p><strong>Reason:</strong> {video.analysis_error || 'The analysis request failed.'}</p>}
+              {['queued', 'processing', 'retrying'].includes(video.analysis_status || '')
+                ? <p>Final analysis is processing automatically.</p>
+                : <p>No final analysis was saved for this recording.</p>}
+              {video.analysis_status === 'failed' && <p><strong>Reason:</strong> {video.analysis_error || 'Automatic analysis retries were exhausted.'}</p>}
               {video.analysis_status === 'skipped' && <p><strong>Reason:</strong> {video.analysis_error || 'No browser transcript was available.'}</p>}
-              {video.analysis_status === 'processing' && <p>Final analysis is still processing.</p>}
               {!video.analysis_status && <p>This older recording was saved before analysis status was tracked.</p>}
-              {video.analysis_status === 'failed' && video.transcript_available && <button type="button" onClick={() => void retryAnalysis(video)} disabled={retryingId === video.id}>{retryingId === video.id ? 'Retrying analysis…' : 'Retry analysis'}</button>}
             </>}
           </div>
         </section>
