@@ -668,6 +668,8 @@ def save_recording():
             current_app.logger.exception("Could not save final recording analysis")
             analysis = None
             analysis_error = str(error)
+    else:
+        analysis_error = "No browser transcript was captured, so final analysis was skipped."
 
     return jsonify(
         stored=True,

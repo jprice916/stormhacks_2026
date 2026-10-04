@@ -21,6 +21,7 @@ type RecordingResponse = {
   recording_url?: string;
   transcript?: string;
   analysis?: Record<string, unknown>;
+  analysis_error?: string;
   revisit_suggestion?: {
     cue_id?: number;
     suggestion?: string;
@@ -388,7 +389,13 @@ export function LoggerPage() {
       if (!response.ok) throw new Error(result.message || 'Failed to save the recording.');
       if (result.recording_url) setPlaybackUrl(result.recording_url);
       setRevisit(result.revisit_suggestion);
-      setStatus(transcript ? `“${transcript}”` : (result.transcript || 'Recording saved.'));
+      setStatus(
+        result.analysis_error
+          ? `Video saved. Final analysis was skipped: ${result.analysis_error}`
+          : result.analysis
+            ? 'Video and final analysis saved.'
+            : (transcript ? `“${transcript}”` : (result.transcript || 'Recording saved.')),
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not save the recording.');
       setIsSaving(false);
