@@ -103,6 +103,9 @@ export function LoggerPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [playbackUrl, setPlaybackUrl] = useState('');
+  const [journalMode, setJournalMode] = useState<'voice' | 'text'>('voice');
+  const [textJournal, setTextJournal] = useState('');
+  const [isTextSaving, setIsTextSaving] = useState(false);
   const [status, setStatus] = useState('Requesting camera and microphone access…');
   const [elapsedMs, setElapsedMs] = useState(0);
   const [reflection, setReflection] = useState<string | null>(null);
@@ -373,6 +376,29 @@ export function LoggerPage() {
     }
   }, [revisit]);
 
+  const saveTextJournal = useCallback(async () => {
+    const transcript = textJournal.trim();
+    if (!transcript) {
+      setStatus('Write a journal entry before saving.');
+      return;
+    }
+    setIsTextSaving(true);
+    const formData = new FormData();
+    formData.append('transcript', transcript);
+    formData.append('current_local_date', new Date().toLocaleDateString('en-CA'));
+    formData.append('user_time_zone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Vancouver');
+    try {
+      const response = await fetch('/api/process-log', { method: 'POST', body: formData });
+      const result = await readResponse<RecordingResponse>(response);
+      if (!response.ok) throw new Error(result.message || 'Could not save the journal entry.');
+      setStatus('Text journal saved.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not save the journal entry.');
+    } finally {
+      setIsTextSaving(false);
+    }
+  }, [textJournal]);
+
   useEffect(() => {
     void startCamera();
     return () => {
@@ -398,19 +424,31 @@ export function LoggerPage() {
           <p className="text-xs font-medium uppercase tracking-[0.17em] text-[#887445]">Voice journal</p>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#887445]">Your camera preview starts automatically. Record a moment you want to remember.</p>
 
-          <div className="relative mt-7 aspect-video overflow-hidden border-2 border-[#473c21] bg-stone-900">
-            <video className={`h-full w-full object-cover ${isComplete ? 'hidden' : ''}`} autoPlay muted playsInline ref={previewRef} />
-            {isComplete && <video className="h-full w-full bg-stone-900 object-contain" controls playsInline ref={recordedVideoRef} src={playbackUrl || undefined} />}
-            {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
-            {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
-            {reflection && (
-              <aside className="absolute bottom-11 right-4 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
-                <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
-                <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
-                <button className="mt-3 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21]" onClick={() => setReflection(null)} type="button">Keep talking</button>
-              </aside>
-            )}
-          </div>
+          {journalMode === 'voice' ? (
+            <div className="relative mt-7 aspect-video overflow-hidden border-2 border-[#473c21] bg-stone-900">
+              <video className={`h-full w-full object-cover ${isComplete ? 'hidden' : ''}`} autoPlay muted playsInline ref={previewRef} />
+              {isComplete && <video className="h-full w-full bg-stone-900 object-contain" controls playsInline ref={recordedVideoRef} src={playbackUrl || undefined} />}
+              {cameraState === 'loading' && !isComplete && <div className="absolute inset-0 grid place-items-center text-sm text-stone-300">Starting camera…</div>}
+              {cameraState === 'error' && !isComplete && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-stone-300">Camera preview is unavailable.</div>}
+              {reflection && (
+                <aside className="absolute bottom-11 right-4 max-w-[min(20rem,calc(100%-2rem))] border-2 border-[#473c21] bg-[#f9f6f1] p-4 text-[#473c21] shadow-[4px_4px_0_#b39e6c]" aria-live="polite">
+                  <p className="text-[0.65rem] font-medium uppercase tracking-[0.15em] text-[#887445]">A thought to explore</p>
+                  <p className="mt-2 font-serif text-base leading-5 italic">{reflection}</p>
+                  <button className="mt-3 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21]" onClick={() => setReflection(null)} type="button">Keep talking</button>
+                </aside>
+              )}
+            </div>
+          ) : (
+            <div className="mt-7 aspect-video border-2 border-[#473c21] bg-white">
+              <textarea
+                aria-label="Text journal entry"
+                className="h-full w-full resize-none bg-transparent p-5 text-base leading-7 text-[#473c21] outline-none placeholder:text-[#bca880] sm:p-7"
+                onChange={(event) => setTextJournal(event.target.value)}
+                placeholder="Write what is on your mind…"
+                value={textJournal}
+              />
+            </div>
+          )}
 
           <p className="mt-4 min-h-6 text-sm leading-6 text-[#887445]" role="status">{status}</p>
 
@@ -424,7 +462,11 @@ export function LoggerPage() {
             </aside>
           )}
 
-          {!isComplete ? (
+          {journalMode === 'text' ? (
+            <div className="mt-6 flex justify-center">
+              <button className="min-h-12 border-2 border-[#473c21] bg-[#473c21] px-6 py-3 text-sm font-medium text-[#f9f6f1] shadow-[3px_3px_0_#b39e6c] hover:bg-[#887445] disabled:cursor-not-allowed disabled:opacity-50" disabled={isTextSaving} onClick={() => void saveTextJournal()} type="button">{isTextSaving ? 'Saving…' : 'Save journal'}</button>
+            </div>
+          ) : !isComplete ? (
             <div className="relative mt-6 flex h-16 items-center justify-center">
               {isRecording ? (
                 <button
@@ -459,7 +501,14 @@ export function LoggerPage() {
               <time className="font-mono text-lg font-semibold" dateTime={`PT${Math.ceil(MAX_RECORDING_MS / 1000)}S`}>{formatDuration(elapsedMs)} / {formatDuration(MAX_RECORDING_MS)}</time>
             </div>
           )}
-          <p className="absolute bottom-3 right-4 text-xs text-[#887445] sm:bottom-4 sm:right-6">Or enter a journal in text</p>
+          <button
+            className="absolute bottom-3 right-4 text-xs text-[#887445] underline underline-offset-4 hover:text-[#473c21] disabled:no-underline disabled:opacity-50 sm:bottom-4 sm:right-6"
+            disabled={isRecording}
+            onClick={() => setJournalMode((mode) => mode === 'voice' ? 'text' : 'voice')}
+            type="button"
+          >
+            {journalMode === 'voice' ? 'Or enter a journal in text' : 'Back to voice journal'}
+          </button>
         </section>
       </div>
     </main>
