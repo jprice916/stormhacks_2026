@@ -48,6 +48,9 @@ export function DayRecordingsPage() {
     let active = true;
     fetch(`/api/recordings?date=${encodeURIComponent(date)}`, { credentials: 'same-origin' })
       .then(async (response) => {
+        if (!response.headers.get('content-type')?.includes('application/json')) {
+          throw new Error(`The recordings service returned an unexpected response (HTTP ${response.status}). Please sign in again and retry.`);
+        }
         const result = await response.json() as RecordingsResponse;
         if (!response.ok) throw new Error(result.message || 'Could not load recordings.');
         return result.videos ?? [];

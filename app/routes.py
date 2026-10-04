@@ -645,6 +645,14 @@ def process_log():
 
 def _list_recordings():
     """Return the signed-in user's TiDB-backed recordings for the React debug page."""
+    recording_date_value = request.args.get("date")
+    recording_date = None
+    if recording_date_value:
+        try:
+            recording_date = datetime.strptime(recording_date_value, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify(message="date must be a date in YYYY-MM-DD format."), 400
+
     _schedule_due_recording_analysis_jobs()
     try:
         videos = get_video_logs_for_user(int(current_user.get_id()), recording_date)
@@ -672,6 +680,7 @@ def _list_recordings():
             "filename": video["title"] or "Recorded video",
             "recorded_at": video["log_date"].isoformat(),
             "recording_url": video["storage_path"],
+            "mime_type": video.get("mime_type") or "application/octet-stream",
             "analysis": analysis if isinstance(analysis, dict) else None,
             "analysis_status": video.get("analysis_status"),
             "analysis_error": video.get("analysis_error"),

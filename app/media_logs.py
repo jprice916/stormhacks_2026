@@ -125,9 +125,14 @@ def get_video_logs_for_user(user_id: int, recording_date: date | None = None) ->
             query = """SELECT logs.id, logs.user_id, logs.log_date, logs.media_type,
                               logs.storage_path, logs.title, logs.notes, logs.created_at,
                               media.mime_type, media.original_filename,
-                              media.file_size_bytes, media.chunk_count
+                              media.file_size_bytes, media.chunk_count,
+                              logs.transcript, logs.analysis_status, logs.analysis_error,
+                              entries.analysis_json
                        FROM audio_visual_logs AS logs
                        JOIN recording_media AS media ON media.log_id = logs.id
+                       LEFT JOIN journal_entries AS entries
+                         ON entries.recording_log_id = logs.id
+                        AND entries.user_id = logs.user_id
                        WHERE logs.user_id = %s
                          AND logs.media_type IN ('audio', 'video', 'audio_video')"""
             params: list = [user_id]
@@ -137,18 +142,7 @@ def get_video_logs_for_user(user_id: int, recording_date: date | None = None) ->
                 query += " AND logs.log_date >= %s AND logs.log_date < %s"
                 params.extend((start, end))
             query += " ORDER BY logs.log_date DESC, logs.id DESC"
-            cursor.execute(
-                """SELECT logs.id, logs.log_date, logs.storage_path, logs.title, logs.notes,
-                          logs.transcript, logs.analysis_status, logs.analysis_error,
-                          entries.analysis_json
-                   FROM audio_visual_logs AS logs
-                   LEFT JOIN journal_entries AS entries
-                     ON entries.recording_log_id = logs.id
-                    AND entries.user_id = logs.user_id
-                   WHERE logs.user_id = %s AND logs.media_type IN ('video', 'audio_video')
-                   ORDER BY logs.log_date DESC, logs.id DESC""",
-                (user_id,),
-            )
+            cursor.execute(query, params)
             return cursor.fetchall()
     finally:
         connection.close()
