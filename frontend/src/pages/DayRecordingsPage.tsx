@@ -121,20 +121,6 @@ export function DayRecordingsPage() {
                   src={`${recording.recording_url}?playback=${recording.id}-${Date.parse(recording.recorded_at)}`}
                 />
               )}
-              <dl className="mt-5 grid gap-x-6 gap-y-3 border-t border-stone-200 pt-4 text-sm sm:grid-cols-2">
-                <div><dt className="font-medium text-stone-500">Log ID</dt><dd>{recording.id}</dd></div>
-                <div><dt className="font-medium text-stone-500">User ID</dt><dd>{recording.user_id}</dd></div>
-                <div><dt className="font-medium text-stone-500">Media type</dt><dd>{recording.media_type}</dd></div>
-                <div><dt className="font-medium text-stone-500">Title</dt><dd>{recording.title || '—'}</dd></div>
-                <div><dt className="font-medium text-stone-500">Log date</dt><dd>{new Date(recording.log_date).toLocaleString()}</dd></div>
-                <div><dt className="font-medium text-stone-500">Created at</dt><dd>{new Date(recording.created_at).toLocaleString()}</dd></div>
-                <div><dt className="font-medium text-stone-500">Storage path</dt><dd className="break-all">{recording.storage_path}</dd></div>
-                <div><dt className="font-medium text-stone-500">Notes</dt><dd className="whitespace-pre-wrap">{recording.notes || '—'}</dd></div>
-                <div><dt className="font-medium text-stone-500">Original filename</dt><dd className="break-all">{recording.original_filename}</dd></div>
-                <div><dt className="font-medium text-stone-500">MIME type</dt><dd>{recording.mime_type}</dd></div>
-                <div><dt className="font-medium text-stone-500">File size</dt><dd>{formatFileSize(recording.file_size_bytes)}</dd></div>
-                <div><dt className="font-medium text-stone-500">Stored chunks</dt><dd>{recording.chunk_count}</dd></div>
-              </dl>
             </article>
           ))}
         </div>
