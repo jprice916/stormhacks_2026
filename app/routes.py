@@ -4,7 +4,6 @@ from pathlib import Path
 from io import BytesIO
 import base64
 import re
-import json
 from datetime import datetime, time as datetime_time, timedelta
 
 from flask import Blueprint, current_app, jsonify, render_template, send_from_directory
@@ -129,35 +128,35 @@ def login():
                 and "\\" not in next_url
             ):
                 return redirect(next_url)
-            return redirect("/static/frontend/profile")
+            return redirect(url_for("main.profile"))
         flash("Username/email or password is incorrect.", "error")
 
     return render_template("login.html")
 
 
-@main.get("/static/frontend/login")
-def frontend_login_alias():
-    """Redirect the frontend-base login path to the app's login route."""
-    return redirect(url_for("main.login"))
-
-
-@main.get("/static/frontend/profile")
-def frontend_profile_alias():
-    """Serve the React profile route when Flask is serving the built frontend."""
+@main.get("/recordings")
+def day_recordings():
+    """Serve the React recordings page for a selected calendar date."""
     frontend_dir = Path(current_app.static_folder) / "frontend"
     if (frontend_dir / "index.html").is_file():
         return send_from_directory(frontend_dir, "index.html")
     dev_server = os.getenv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5173")
-    return redirect(f"{dev_server.rstrip('/')}/static/frontend/profile")
+    query_string = request.query_string.decode()
+    query_suffix = f"?{query_string}" if query_string else ""
+    return redirect(f"{dev_server.rstrip('/')}/recordings{query_suffix}")
 
 
 @main.post("/api/login")
 def api_login():
     """Authenticate the React login form and establish a Flask session."""
-    user = login_service.authenticate(
-        request.form.get("identity", ""),
-        request.form.get("password", ""),
-    )
+    try:
+        user = login_service.authenticate(
+            request.form.get("identity", ""),
+            request.form.get("password", ""),
+        )
+    except (MySQLError, KeyError, ValueError):
+        current_app.logger.exception("Sign-in could not reach the account database")
+        return jsonify(message="The sign-in service is unavailable. Please check the database connection and try again."), 503
     if user is None:
         return jsonify(message="Username/email or password is incorrect."), 401
 
@@ -168,8 +167,15 @@ def api_login():
         and not next_url.startswith("//")
         and "\\" not in next_url
     ):
-        next_url = "/static/frontend/profile"
+        next_url = url_for("main.profile")
     return jsonify(ok=True, redirect=next_url)
+
+
+@main.post("/api/logout")
+def api_logout():
+    """End the current Flask session for the React profile page."""
+    logout_user()
+    return jsonify(ok=True)
 
 
 def _profile_picture_mime(image: bytes) -> str | None:
@@ -280,19 +286,21 @@ def api_delete_profile():
     if payload.get("confirmation") != "delete":
         return jsonify(message='Type "delete" to confirm account removal.'), 400
     try:
-        profile_service.delete_account(int(current_user.get_id()))
+        deleted = profile_service.delete_account(int(current_user.get_id()))
     except MySQLError:
         current_app.logger.exception("Could not delete account data from TiDB")
         return jsonify(message="The account could not be deleted. Please try again."), 503
+    if not deleted:
+        return jsonify(message="The account was not found, so nothing was deleted."), 404
     logout_user()
     return jsonify(ok=True)
 
 
-@main.get("/api/journal/takeaways")
-def api_journal_takeaways():
-    """Return the signed-in user's journal takeaways for one Sunday-based week."""
+@main.get("/api/journal/summaries")
+def api_journal_summaries():
+    """Return the signed-in user's journal summaries for one Sunday-based week."""
     if not current_user.is_authenticated:
-        return jsonify(message="Please sign in to view journal highlights."), 401
+        return jsonify(message="Please sign in to view journal summaries."), 401
 
     week_start_value = request.args.get("week_start", "")
     try:
@@ -309,7 +317,7 @@ def api_journal_takeaways():
         connection = get_connection()
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT DATE(created_at) AS entry_date, key_takeaways
+                """SELECT DATE(created_at) AS entry_date, summary
                    FROM journal_entries
                    WHERE user_id = %s AND created_at >= %s AND created_at < %s
                    ORDER BY created_at, id""",
@@ -317,29 +325,21 @@ def api_journal_takeaways():
             )
             rows = cursor.fetchall()
     except (MySQLError, KeyError, ValueError):
-        current_app.logger.exception("Could not load journal takeaways from TiDB")
-        return jsonify(message="Journal highlights could not be loaded from the database."), 503
+        current_app.logger.exception("Could not load journal summaries from TiDB")
+        return jsonify(message="Journal summaries could not be loaded from the database."), 503
     finally:
         if connection is not None:
             connection.close()
 
-    takeaways_by_date: dict[str, list[str]] = {}
+    summaries_by_date: dict[str, list[str]] = {}
     for row in rows:
-        value = row.get("key_takeaways")
-        if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except json.JSONDecodeError:
-                value = []
-        if not isinstance(value, list):
+        summary = row.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
             continue
         date_key = row["entry_date"].isoformat()
-        daily_takeaways = takeaways_by_date.setdefault(date_key, [])
-        daily_takeaways.extend(
-            item.strip() for item in value if isinstance(item, str) and item.strip()
-        )
+        summaries_by_date.setdefault(date_key, []).append(summary.strip())
 
-    return jsonify(week_start=week_start.isoformat(), takeaways=takeaways_by_date)
+    return jsonify(week_start=week_start.isoformat(), summaries=summaries_by_date)
 
 
 @main.route("/signup", methods=["GET", "POST"])
@@ -367,7 +367,7 @@ def signup():
                 flash("That username or email is already registered.", "error")
             else:
                 login_user(user)
-                return redirect("/static/frontend/profile")
+                return redirect(url_for("main.profile"))
 
     return render_template("signup.html")
 
@@ -582,7 +582,7 @@ def _list_recordings():
     """Return the signed-in user's TiDB-backed recordings for the React debug page."""
     _schedule_due_recording_analysis_jobs()
     try:
-        videos = get_video_logs_for_user(int(current_user.get_id()))
+        videos = get_video_logs_for_user(int(current_user.get_id()), recording_date)
     except MySQLError:
         current_app.logger.exception("Could not list recordings from TiDB")
         return jsonify(message="Could not load recordings from TiDB."), 503
@@ -597,6 +597,13 @@ def _list_recordings():
                 analysis = None
         response_videos.append({
             "id": video["id"],
+            "user_id": video["user_id"],
+            "log_date": video["log_date"].isoformat(),
+            "media_type": video["media_type"],
+            "storage_path": video["storage_path"],
+            "title": video["title"],
+            "notes": video["notes"],
+            "created_at": video["created_at"].isoformat(),
             "filename": video["title"] or "Recorded video",
             "recorded_at": video["log_date"].isoformat(),
             "recording_url": video["storage_path"],

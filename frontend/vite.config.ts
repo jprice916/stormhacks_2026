@@ -30,6 +30,9 @@ export default defineConfig({
       '/recordings': {
         target: process.env.FLASK_PROXY_TARGET || 'http://127.0.0.1:5000',
         changeOrigin: true,
+        bypass: (request) => request.method === 'GET' && request.url?.split('?')[0] === '/recordings'
+          ? '/index.html'
+          : undefined,
       },
     },
   },
