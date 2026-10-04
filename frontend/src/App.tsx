@@ -7,7 +7,7 @@ import { WeeklyScreen } from './pages/WeeklyScreen';
 function App() {
   const pathname = window.location.pathname.replace(/\/+$/, '');
   if (pathname === '/login') return <LoginPage />;
-  if (pathname === '/logger') return <LoggerPage />;
+  if (pathname === '/logger' || pathname.endsWith('/logger')) return <LoggerPage />;
   if (pathname.endsWith('/weekly')) return <WeeklyScreen />;
   if (pathname.endsWith('/profile')) return <ProfilePage />;
   return <LandingPage />;
