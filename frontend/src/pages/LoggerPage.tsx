@@ -450,7 +450,7 @@ export function LoggerPage() {
             </div>
           )}
 
-          <p className="mt-4 min-h-6 text-sm leading-6 text-[#887445]" role="status">
+          <p className="mt-4 h-6 overflow-hidden text-ellipsis whitespace-nowrap text-sm leading-6 text-[#887445]" role="status">
             {journalMode === 'voice' ? status : ''}
           </p>
 
