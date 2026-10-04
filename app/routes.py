@@ -64,9 +64,9 @@ UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-@main.get("/")
-@main.get("/weekly")
-@main.get("/profile")
+@main.get("/", endpoint="index")
+@main.get("/weekly", endpoint="weekly")
+@main.get("/profile", endpoint="profile")
 @login_required
 def index():
     frontend_dir = Path(current_app.static_folder) / "frontend"
@@ -78,7 +78,7 @@ def index():
 @main.get("/logger")
 @login_required
 def logger():
-    return render_template("logger.html")
+    return send_from_directory(current_app.static_folder, "frontend/index.html")
 
 
 @main.get("/my-videos")
