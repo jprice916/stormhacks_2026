@@ -251,7 +251,7 @@ export function LoggerPage() {
   const startSpeechRecognition = useCallback(() => {
     const Constructor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Constructor) {
-      setStatus('Live browser transcription is unavailable; the recording will be transcribed after it ends.');
+      setStatus('Live browser transcription is unavailable, so this recording cannot receive a final analysis.');
       return;
     }
     const recognition = new Constructor();

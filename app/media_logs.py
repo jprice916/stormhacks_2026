@@ -123,6 +123,7 @@ def get_video_logs_for_user(user_id: int) -> list[dict]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """SELECT logs.id, logs.log_date, logs.storage_path, logs.title, logs.notes,
+                          logs.transcript, logs.analysis_status, logs.analysis_error,
                           entries.analysis_json
                    FROM audio_visual_logs AS logs
                    LEFT JOIN journal_entries AS entries
@@ -133,6 +134,31 @@ def get_video_logs_for_user(user_id: int) -> list[dict]:
                 (user_id,),
             )
             return cursor.fetchall()
+    finally:
+        connection.close()
+
+
+def update_recording_analysis_state(
+    log_id: int,
+    *,
+    transcript: str | None = None,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """Persist browser-transcript and final-analysis progress for a saved recording."""
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE audio_visual_logs
+                   SET transcript = COALESCE(%s, transcript), analysis_status = %s, analysis_error = %s
+                   WHERE id = %s""",
+                (transcript, status, error, log_id),
+            )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
 

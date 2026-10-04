@@ -73,6 +73,9 @@ def initialize_database() -> None:
             storage_path VARCHAR(1024) NOT NULL,
             title VARCHAR(200),
             notes TEXT,
+            transcript MEDIUMTEXT NULL,
+            analysis_status VARCHAR(30) NULL,
+            analysis_error TEXT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX ix_audio_visual_logs_user_id (user_id),
             INDEX ix_audio_visual_logs_log_date (log_date),
@@ -163,6 +166,9 @@ def initialize_database() -> None:
                 "ALTER TABLE journal_entries ADD COLUMN recording_log_id BIGINT UNSIGNED NULL",
                 "ALTER TABLE journal_entries ADD COLUMN analysis_json JSON NULL",
                 "ALTER TABLE journal_entries ADD INDEX ix_journal_entries_recording_log (recording_log_id)",
+                "ALTER TABLE audio_visual_logs ADD COLUMN transcript MEDIUMTEXT NULL",
+                "ALTER TABLE audio_visual_logs ADD COLUMN analysis_status VARCHAR(30) NULL",
+                "ALTER TABLE audio_visual_logs ADD COLUMN analysis_error TEXT NULL",
             ):
                 try:
                     cursor.execute(statement)

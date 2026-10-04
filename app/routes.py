@@ -34,6 +34,7 @@ from app.media_logs import (
     create_database_recording,
     get_database_recording,
     get_video_logs_for_user,
+    update_recording_analysis_state,
     user_owns_media,
 )
 from app.services.db_service import DatabaseService
@@ -589,6 +590,9 @@ def _list_recordings():
             "recorded_at": video["log_date"].isoformat(),
             "recording_url": video["storage_path"],
             "analysis": analysis if isinstance(analysis, dict) else None,
+            "analysis_status": video.get("analysis_status"),
+            "analysis_error": video.get("analysis_error"),
+            "transcript_available": bool(video.get("transcript")),
         })
     return jsonify(videos=response_videos)
 
@@ -645,12 +649,19 @@ def save_recording():
     transcript = request.form.get("transcript", "").strip()
     if transcript:
         try:
+            update_recording_analysis_state(log_id, transcript=transcript, status="processing")
             analysis = gemini_service.analyze_transcript(
                 transcript,
                 current_date=request.form.get("current_local_date"),
                 user_time_zone=request.form.get("user_time_zone", "America/Vancouver"),
             )
-            embedding = gemini_service.generate_embedding(transcript)
+            try:
+                embedding = gemini_service.generate_embedding(transcript)
+            except GeminiRequestError:
+                # An embedding improves future revisit matching, but must not discard
+                # a completed journal analysis when the embedding quota is unavailable.
+                current_app.logger.exception("Could not create recording embedding")
+                embedding = None
             entry_id = db_service.save_entry(
                 JournalEntry(
                     user_id=current_user.get_id(),
@@ -664,12 +675,21 @@ def save_recording():
                 ),
                 analysis,
             )
+            update_recording_analysis_state(log_id, status="saved")
         except (GeminiRequestError, MySQLError) as error:
             current_app.logger.exception("Could not save final recording analysis")
             analysis = None
             analysis_error = str(error)
+            try:
+                update_recording_analysis_state(log_id, transcript=transcript, status="failed", error=analysis_error)
+            except MySQLError:
+                current_app.logger.exception("Could not record final-analysis failure")
     else:
         analysis_error = "No browser transcript was captured, so final analysis was skipped."
+        try:
+            update_recording_analysis_state(log_id, status="skipped", error=analysis_error)
+        except MySQLError:
+            current_app.logger.exception("Could not record missing transcript state")
 
     return jsonify(
         stored=True,

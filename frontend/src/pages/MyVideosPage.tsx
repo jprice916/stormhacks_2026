@@ -6,6 +6,9 @@ type VideoRecord = {
   recorded_at: string;
   recording_url: string;
   analysis: FinalAnalysis | null;
+  analysis_status?: 'processing' | 'saved' | 'failed' | 'skipped' | null;
+  analysis_error?: string | null;
+  transcript_available?: boolean;
 };
 
 type FinalAnalysis = {
@@ -80,7 +83,13 @@ export function MyVideosPage() {
                 {video.analysis.growth_signal?.type && <p><strong>Growth signal:</strong> {video.analysis.growth_signal.topic || video.analysis.growth_signal.type}</p>}
                 {!!video.analysis.important_events?.length && <><strong>Important events</strong><ul>{video.analysis.important_events.map((event, index) => <li key={index}>{event.title}{event.scheduled_for ? ` — ${event.scheduled_for}` : ''}</li>)}</ul></>}
               </>
-            ) : <p>No final analysis was saved for this recording.</p>}
+            ) : <>
+              <p>No final analysis was saved for this recording.</p>
+              {video.analysis_status === 'failed' && <p><strong>Reason:</strong> {video.analysis_error || 'The analysis request failed.'}</p>}
+              {video.analysis_status === 'skipped' && <p><strong>Reason:</strong> {video.analysis_error || 'No browser transcript was available.'}</p>}
+              {video.analysis_status === 'processing' && <p>Final analysis is still processing.</p>}
+              {!video.analysis_status && <p>This older recording was saved before analysis status was tracked.</p>}
+            </>}
           </div>
         </section>
       ))}
