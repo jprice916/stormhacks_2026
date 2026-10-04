@@ -10,6 +10,7 @@ main = Blueprint("main", __name__)
 @main.get("/")
 @main.get("/weekly")
 @main.get("/profile")
+@main.get("/voice-settings")
 def index():
     frontend_dir = Path(current_app.static_folder) / "frontend"
     if (frontend_dir / "index.html").is_file():

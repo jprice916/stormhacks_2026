@@ -1,5 +1,6 @@
 import type { CircularCarouselItem } from '../components/Carousel/CircularCarousel';
 
+
 export interface WeeklyPreviewEntry {
   day: string;
   hasData: boolean;
@@ -45,9 +46,13 @@ export const weeklyPreviewEntries: WeeklyPreviewEntry[] = [
   },
 ];
 
-export const weeklyPreviewItems: CircularCarouselItem[] = weeklyPreviewEntries.map((entry) => ({
-  src: entry.hasData ? `${import.meta.env.BASE_URL}assets/data-state.svg` : `${import.meta.env.BASE_URL}assets/empty-state.svg`,
-  alt: entry.hasData ? 'Preview slot with data' : 'Preview slot with no data',
-  title: entry.day,
-  subtitle: entry.hasData ? 'Data available' : 'No data',
-}));
+export const weeklyPreviewItems: CircularCarouselItem[] = weeklyPreviewEntries.map((entry) => {
+  const imageName = entry.hasData ? `${entry.day.toLowerCase()}.gif` : 'no_data.gif';
+
+  return {
+    src: `${import.meta.env.BASE_URL}images/weekly/${imageName}`,
+    alt: entry.hasData ? `${entry.day} memory illustration` : 'No data illustration',
+    title: entry.day,
+    subtitle: entry.hasData ? 'Data available' : 'No data',
+  };
+});

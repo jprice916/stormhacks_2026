@@ -37,25 +37,17 @@
   display: inline-flex;
   align-items: center;
   gap: 11px;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 22px;
+  font-family: var(--font-gaegu);
+  font-size: 33px;
   font-style: italic;
   letter-spacing: 0.02em;
 }
 
-.profile-brand-mark {
-  display: grid;
-  width: 38px;
+.profile-brand-logo {
+  display: block;
+  width: auto;
   height: 38px;
-  place-items: center;
-  border: 1.5px solid var(--ink);
-  border-radius: 50%;
-  background: #e7ddc5;
-}
-
-.profile-brand-mark svg {
-  width: 22px;
-  height: 22px;
+  object-fit: contain;
 }
 
 .profile-navigation {
@@ -63,7 +55,7 @@
   align-items: center;
   gap: 27px;
   color: var(--muted-ink);
-  font-size: 14px;
+  font-size: 21px;
 }
 
 .profile-navigation a,
@@ -101,7 +93,7 @@
 .profile-eyebrow {
   margin: 0;
   color: var(--muted-ink);
-  font-size: 11px;
+  font-size: 16.5px;
   font-weight: 700;
   letter-spacing: 0.17em;
   line-height: 1.5;
@@ -111,8 +103,8 @@
 .profile-page-caption {
   margin: 5px 0 0;
   color: #756440;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 20px;
+  font-family: var(--font-gaegu);
+  font-size: 30px;
   font-style: italic;
 }
 
@@ -182,7 +174,7 @@
   color: var(--ink);
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 21px;
   line-height: 1.2;
   padding: 10px 16px;
   text-decoration: none;
@@ -214,7 +206,7 @@
   margin-top: 17px;
   border-radius: 12px;
   padding: 7px 12px;
-  font-size: 13px;
+  font-size: 19.5px;
 }
 
 .profile-button--picture svg,
@@ -237,7 +229,7 @@
 .avatar-hint {
   margin: 8px 0 0;
   color: #877a5d;
-  font-size: 11px;
+  font-size: 16.5px;
   text-align: center;
 }
 
@@ -245,8 +237,8 @@
 .profile-form-note {
   margin: 8px 0 0;
   color: #a15e49;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
-  font-size: 13px;
+  font-family: var(--font-gaegu);
+  font-size: 19.5px;
   line-height: 1.5;
 }
 
@@ -260,7 +252,7 @@
 }
 
 .profile-handwritten {
-  font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-weight: 500;
   letter-spacing: -0.045em;
 }
@@ -278,7 +270,7 @@
   display: inline-block;
   margin: 0;
   color: #40351e;
-  font-size: clamp(37px, 5.6vw, 57px);
+  font-size: clamp(55.5px, 8.4vw, 85.5px);
   line-height: 1.22;
   overflow-wrap: anywhere;
 }
@@ -304,7 +296,7 @@
   color: #796845;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: 19.5px;
   padding: 7px;
   transition: background-color 130ms ease, color 130ms ease;
 }
@@ -331,7 +323,7 @@
   gap: 8px;
   margin: 14px 0 0;
   color: #766b55;
-  font-size: 14px;
+  font-size: 21px;
   overflow-wrap: anywhere;
 }
 
@@ -355,12 +347,12 @@
 .profile-note-card p {
   margin: 0;
   color: #75613a;
-  font-size: 14px;
+  font-size: 21px;
 }
 
 .profile-note-sparkle {
   color: #a78245;
-  font-size: 17px;
+  font-size: 25.5px;
 }
 
 .profile-hero-doodle {
@@ -384,7 +376,7 @@
   border-radius: 12px;
   background: #fffdf8;
   color: var(--ink);
-  font-size: clamp(29px, 4.8vw, 43px);
+  font-size: clamp(43.5px, 7.2vw, 64.5px);
   padding: 4px 10px;
 }
 
@@ -410,7 +402,7 @@
   min-height: 36px;
   border-radius: 10px;
   padding: 7px 12px;
-  font-size: 13px;
+  font-size: 19.5px;
 }
 
 .profile-visually-hidden {
@@ -457,8 +449,8 @@
 .profile-section-title {
   margin: 3px 0 0;
   color: #40351e;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 23px;
+  font-family: var(--font-gaegu);
+  font-size: 34.5px;
   font-weight: 500;
   letter-spacing: -0.02em;
 }
@@ -484,7 +476,7 @@
   display: block;
   margin: 0 0 7px 2px;
   color: #645638;
-  font-size: 13px;
+  font-size: 19.5px;
   font-weight: 600;
 }
 
@@ -497,7 +489,7 @@
   background: #fffdf8;
   color: #3f3829;
   font: inherit;
-  font-size: 14px;
+  font-size: 21px;
   padding: 10px 13px;
   transition: border-color 130ms ease, background-color 130ms ease, box-shadow 130ms ease;
 }
@@ -537,7 +529,7 @@
   color: #796845;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 18px;
   padding: 5px 6px;
   transform: translateY(-50%);
 }
@@ -563,7 +555,7 @@
 .password-hint {
   margin: 0;
   color: #83775d;
-  font-size: 12px;
+  font-size: 18px;
   line-height: 1.5;
 }
 
@@ -617,8 +609,8 @@
   align-items: flex-start;
   gap: 8px;
   margin: -3px 0 0;
-  font-family: 'Segoe Print', 'Bradley Hand', cursive;
-  font-size: 13px;
+  font-family: var(--font-gaegu);
+  font-size: 19.5px;
   line-height: 1.5;
 }
 
@@ -660,7 +652,7 @@
 .delete-title {
   margin: 5px 0 0;
   color: #705644;
-  font-size: 24px;
+  font-size: 36px;
   line-height: 1.35;
 }
 
@@ -668,7 +660,7 @@
   max-width: 530px;
   margin: 6px 0 0;
   color: #887866;
-  font-size: 13px;
+  font-size: 19.5px;
   line-height: 1.6;
 }
 
@@ -679,13 +671,13 @@
   gap: 14px;
   border-top: 1px solid #ded6c6;
   color: #988866;
-  font-size: 12px;
+  font-size: 18px;
   padding: 18px 2px 25px;
 }
 
 .profile-footer span:first-child {
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 14px;
+  font-family: var(--font-gaegu);
+  font-size: 21px;
   font-style: italic;
 }
 
@@ -699,7 +691,7 @@
   border: 1.5px dashed #b9a77c;
   border-radius: 26px;
   color: #766440;
-  font-size: 19px;
+  font-size: 28.5px;
 }
 
 .profile-load-message p {
@@ -732,8 +724,8 @@
   top: 25px;
   right: 28px;
   color: #c08970;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
-  font-size: 35px;
+  font-family: var(--font-gaegu);
+  font-size: 52.5px;
   transform: rotate(-12deg);
 }
 
@@ -741,20 +733,20 @@
   max-width: 350px;
   margin: 9px 0 0;
   color: #4d3e25;
-  font-size: 28px;
+  font-size: 42px;
   line-height: 1.3;
 }
 
 .profile-modal-copy {
   margin: 12px 0 0;
   color: #766b55;
-  font-size: 14px;
+  font-size: 21px;
   line-height: 1.65;
 }
 
 .profile-modal-copy strong {
   color: #57472a;
-  font-family: 'Segoe Print', 'Comic Sans MS', cursive;
+  font-family: var(--font-gaegu);
   font-weight: 700;
 }
 
@@ -788,17 +780,16 @@
 
   .profile-brand {
     gap: 8px;
-    font-size: 19px;
+    font-size: 28.5px;
   }
 
-  .profile-brand-mark {
-    width: 34px;
+  .profile-brand-logo {
     height: 34px;
   }
 
   .profile-navigation {
     gap: 13px;
-    font-size: 13px;
+    font-size: 19.5px;
   }
 
   .profile-page-intro {
@@ -832,12 +823,12 @@
   }
 
   .profile-name {
-    font-size: clamp(34px, 10vw, 49px);
+    font-size: clamp(51px, 15vw, 73.5px);
   }
 
   .profile-email {
     justify-content: center;
-    font-size: 13px;
+    font-size: 19.5px;
   }
 
   .profile-note-card {
@@ -884,7 +875,7 @@
   }
 
   .delete-title {
-    font-size: 22px;
+    font-size: 33px;
   }
 
   .profile-footer {

@@ -8,7 +8,7 @@ interface AgentProps {
 }
 
 export function Agent({
-  src = `${import.meta.env.BASE_URL}assets/agent-placeholder.svg`,
+  src = `${import.meta.env.BASE_URL}images/weekly/marmot.gif`,
   isSidebarOpen,
   onClick,
   buttonRef,

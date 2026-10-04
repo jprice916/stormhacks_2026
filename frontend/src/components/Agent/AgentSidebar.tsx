@@ -1,6 +1,10 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-const agentNavigationItems = ['Memories', 'Milestones', 'Settings'] as const;
+const agentNavigationItems = [
+  { label: 'Memories', href: undefined },
+  { label: 'Milestones', href: undefined },
+  { label: 'Settings', href: '/voice-settings' },
+] as const;
 
 interface AgentSidebarProps {
   isOpen: boolean;
@@ -102,14 +106,23 @@ export function AgentSidebar({ isOpen, onClose, triggerRef }: AgentSidebarProps)
         <nav aria-label="Agent navigation" className="mt-8">
           <ul className="grid grid-cols-3 gap-3">
             {agentNavigationItems.map((item) => (
-              <li key={item}>
-                <button
-                  className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-2 text-center text-xs font-medium text-stone-700 shadow-sm disabled:cursor-not-allowed sm:text-base"
-                  disabled
-                  type="button"
-                >
-                  {item}
-                </button>
+              <li key={item.label}>
+                {item.href ? (
+                  <a
+                    className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-400 bg-white px-2 text-center text-xs font-medium text-stone-700 shadow-sm transition-colors hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-700 sm:text-base"
+                    href={item.href}
+                  >
+                    {item.label}
+                  </a>
+                ) : (
+                  <button
+                    className="flex aspect-square w-full items-center justify-center rounded-xl border border-stone-300 bg-white px-2 text-center text-xs font-medium text-stone-700 shadow-sm disabled:cursor-not-allowed sm:text-base"
+                    disabled
+                    type="button"
+                  >
+                    {item.label}
+                  </button>
+                )}
               </li>
             ))}
           </ul>

@@ -16,10 +16,10 @@ export function Carousel({ items, onActiveChange }: CarouselProps) {
       <CircularCarousel
         aspectRatio={1}
         autoplay="off"
-        cardWidth={250}
+        cardWidth={275}
         draggable
         focusOnClick
-        gap={22}
+        gap={64}
         items={items}
         onChange={onActiveChange}
         perspective={1300}
