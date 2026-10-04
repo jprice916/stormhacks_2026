@@ -24,6 +24,16 @@ type RecordingsResponse = {
   message?: string;
 };
 
+type JournalSummary = {
+  full_summary?: string;
+};
+
+type JournalSummariesResponse = {
+  entries_by_date?: Record<string, JournalSummary[]>;
+  summaries?: Record<string, string[]>;
+  message?: string;
+};
+
 function formatSelectedDate(dateValue: string) {
   const [year, month, day] = dateValue.split('-').map(Number);
   const date = new Date(year, month - 1, day);
@@ -35,24 +45,18 @@ function formatSelectedDate(dateValue: string) {
   }).format(date);
 }
 
-function formatFileSize(size: number | string) {
-  const bytes = Number(size);
-  if (!Number.isFinite(bytes)) return String(size);
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(1)} ${units[unit]}`;
+function sundayFor(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() - date.getDay());
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 export function DayRecordingsPage() {
   const date = new URLSearchParams(window.location.search).get('date') ?? '';
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [message, setMessage] = useState('Loading recordings…');
+  const [daySummary, setDaySummary] = useState('');
 
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -80,6 +84,36 @@ export function DayRecordingsPage() {
     return () => { active = false; };
   }, [date]);
 
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setDaySummary('');
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(`/api/journal/summaries?week_start=${encodeURIComponent(sundayFor(date))}`, {
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const result = await response.json() as JournalSummariesResponse;
+        if (!response.ok) throw new Error(result.message || 'Could not load the journal summary.');
+        const detailedSummaries = (result.entries_by_date?.[date] ?? [])
+          .map((entry) => entry.full_summary)
+          .filter((summary): summary is string => Boolean(summary?.trim()));
+        return detailedSummaries.length > 0
+          ? detailedSummaries
+          : result.summaries?.[date] ?? [];
+      })
+      .then((summaries) => setDaySummary(summaries.join('\n\n')))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setDaySummary('');
+      });
+
+    return () => controller.abort();
+  }, [date]);
+
   const formattedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? formatSelectedDate(date) : 'Selected day';
 
   return (
@@ -93,6 +127,14 @@ export function DayRecordingsPage() {
           <h1 className="mt-2 font-serif text-3xl sm:text-4xl">{formattedDate}</h1>
         </header>
 
+        {daySummary && (
+          <section className="mb-8 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="day-summary-title">
+            <p className="text-sm uppercase tracking-[0.18em] text-stone-500">Journal summary</p>
+            <h2 className="mt-2 font-serif text-2xl" id="day-summary-title">Your day, in full</h2>
+            <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-stone-700">{daySummary}</p>
+          </section>
+        )}
+
         {message && <p className="rounded-xl bg-white p-5" role="status">{message}</p>}
         {!message && recordings.length === 0 && (
           <p className="rounded-xl bg-white p-5">No recordings were saved for this day.</p>
@@ -101,7 +143,6 @@ export function DayRecordingsPage() {
         <div className="space-y-6">
           {recordings.map((recording) => (
             <article className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm sm:p-7" key={recording.id}>
-              <h2 className="font-serif text-xl">{recording.filename || 'Recording'}</h2>
               <p className="mb-4 mt-1 text-sm text-stone-500">
                 {new Date(recording.recorded_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
               </p>
